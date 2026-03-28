@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cam Profile Designer</title>
-  <script type="module" crossorigin src="/CamForge/assets/index-BYGmx7l1.js"></script>
-  <link rel="stylesheet" crossorigin href="/CamForge/assets/index-vwYfq80X.css">
+  <script type="module" crossorigin src="/CamForge/assets/index-DA45oNpd.js"></script>
+  <link rel="stylesheet" crossorigin href="/CamForge/assets/index-CcwE4VsW.css">
 </head>
 <body>
 <div class="app-layout">
@@ -40,11 +40,13 @@
       </button>
     </div>
     <div class="top-actions">
+      <button id="btnToggleLeft" title="Toggle left panel ([)">◧</button>
       <button id="btnTheme" title="Toggle light/dark mode">☀ Light</button>
       <button id="btnUndo">↶ Undo</button>
       <button id="btnRedo">↷ Redo</button>
       <button id="btnClear">Clear All</button>
       <button id="btnExport">Export SVG</button>
+      <button id="btnToggleRight" title="Toggle right panel (])">◨</button>
     </div>
   </div>
 
@@ -63,8 +65,9 @@
         <span><kbd>L</kbd> Line</span><span><kbd>H</kbd> H-Ref</span>
         <span><kbd>G</kbd> V-Ref</span><span><kbd>T</kbd> Callout</span>
         <span><kbd>D</kbd> Dim</span><span><kbd>I</kbd> Intersects</span>
-        <span><kbd>Del</kbd> Delete</span><span><kbd>S</kbd> Snap</span>
-        <span><kbd>Space</kbd> Pan</span><span><kbd>Shift</kbd> No-snap</span>
+        <span><kbd>Del</kbd> Delete</span><span><kbd>S</kbd> Snap on/off</span>
+        <span><kbd>Space</kbd>/<kbd>Alt</kbd> Pan</span><span><kbd>Shift</kbd> Suspend snap</span>
+        <span><kbd>[</kbd> Left panel</span><span><kbd>]</kbd> Right panel</span>
       </div>
     </div>
   </div>
@@ -110,6 +113,14 @@
       <div class="prop-row"><span class="prop-label">Y Grid</span><input type="number" id="yGrid" value="5" step="5" min="1"></div>
     </div>
     <div class="prop-group">
+      <label>Grid Mode</label>
+      <div class="prop-row"><span class="prop-label">Extent</span><select id="gridMode"><option value="bounded">Bounded</option><option value="infinite">Infinite</option></select></div>
+      <div class="prop-row"><label class="snap-check"><input type="checkbox" id="repeatProfile"> Repeat Profile</label></div>
+      <div class="prop-row grid-mode-sub"><label class="snap-check"><input type="checkbox" id="repeatProfileUpstream" disabled> Repeat upstream (left)</label></div>
+      <div class="prop-row"><label class="snap-check"><input type="checkbox" id="masterRollover"> X Rollover</label></div>
+      <div class="prop-row"><label class="snap-check"><input type="checkbox" id="slaveRollover"> Y Rollover</label></div>
+    </div>
+    <div class="prop-group">
       <label>Axis Labels</label>
       <div class="prop-row"><span class="prop-label">X Axis</span><input type="text" id="xLabel" value="Degrees (°)"></div>
       <div class="prop-row"><span class="prop-label">Y Axis</span><input type="text" id="yLabel" value="Displacement (mm)"></div>
@@ -140,7 +151,16 @@
     <div class="status-item" id="statusObjects">Objects: 0</div>
     <div class="status-item" id="statusTool">Tool: Select</div>
     <div style="flex:1"></div>
-    <div class="status-item" id="statusSnap" style="cursor:pointer" title="Toggle grid snap (S)">Snap: Grid</div>
+    <div class="status-item snap-status" id="statusSnap" style="cursor:pointer" title="Snap settings (S)">
+      <span id="snapLabel">Snap: Grid+Nodes+Curve</span>
+      <div class="snap-popover" id="snapPopover">
+        <label class="snap-check"><input type="checkbox" id="snapGrid" checked> Grid</label>
+        <label class="snap-check"><input type="checkbox" id="snapNodes" checked> Path Nodes</label>
+        <label class="snap-check"><input type="checkbox" id="snapCurve" checked> Path Curve</label>
+        <div class="snap-sep"></div>
+        <label class="snap-check"><input type="checkbox" id="snapActiveOnly"> Active path only</label>
+      </div>
+    </div>
   </div>
 </div>
 
