@@ -9,7 +9,7 @@ app.canvas = document.getElementById('mainCanvas');
 app.ctx = app.canvas.getContext('2d');
 app.container = document.getElementById('canvasContainer');
 
-document.getElementById('intersectColor').value = cssVar('--intersect-default');
+app.paths[0].color = cssVar('--accent-blue');
 
 initEvents();
 resize();

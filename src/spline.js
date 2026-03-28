@@ -1,11 +1,9 @@
-import { app } from './state.js';
-
-export function sorted() {
-  return [...app.points].sort((a, b) => a.x - b.x);
+export function sortedPoints(points) {
+  return [...points].sort((a, b) => a.x - b.x);
 }
 
-export function sampleSpline(nPerSeg) {
-  const pts = sorted();
+export function sampleSpline(path, nPerSeg) {
+  const pts = sortedPoints(path.points);
   if (pts.length < 2) return [];
   const result = [], n = pts.length;
   nPerSeg = nPerSeg || 50;
@@ -16,8 +14,8 @@ export function sampleSpline(nPerSeg) {
   }
 
   function naturalSlope(i) {
-    if (i <= 0) return app.startSlope;
-    if (i >= n - 1) return app.endSlope;
+    if (i <= 0) return path.startSlope;
+    if (i >= n - 1) return path.endSlope;
     const prev = pts[i - 1], next = pts[i + 1];
     if (prev.x === next.x) return 0;
     return (next.y - prev.y) / (next.x - prev.x);
@@ -36,14 +34,14 @@ export function sampleSpline(nPerSeg) {
       const dx = p2.x - p1.x;
       let entrySlope;
       if (i === 0) {
-        entrySlope = app.startSlope;
+        entrySlope = path.startSlope;
       } else {
         const prevType = pts[i - 1].segType || 'cubic';
         entrySlope = (prevType === 'linear') ? getLinearSlope(i - 1) : naturalSlope(i);
       }
       let exitSlope;
       if (i === n - 2) {
-        exitSlope = app.endSlope;
+        exitSlope = path.endSlope;
       } else {
         const nextType = p2.segType || 'cubic';
         exitSlope = (nextType === 'linear') ? getLinearSlope(i + 1) : naturalSlope(i + 1);

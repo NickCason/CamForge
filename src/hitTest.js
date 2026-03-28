@@ -1,16 +1,47 @@
 import { app } from './state.js';
 import { g2c } from './coords.js';
 
+const HIT_PAD = 6;
+const MARKER_HIT_PX = 14;
+
+export function hitIntersectMarker(cx, cy) {
+  const hits = app._intersectMarkerHits;
+  if (!hits?.length) return null;
+  const th2 = MARKER_HIT_PX * MARKER_HIT_PX;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const h = hits[i];
+    const dx = cx - h.sx;
+    const dy = cy - h.sy;
+    if (dx * dx + dy * dy <= th2) return h;
+  }
+  return null;
+}
+
+export function hitIntersectLabel(cx, cy) {
+  const hits = app._intersectLabelHits;
+  if (!hits || !hits.length) return null;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const h = hits[i];
+    if (cx >= h.left - HIT_PAD && cx <= h.right + HIT_PAD && cy >= h.top - HIT_PAD && cy <= h.bottom + HIT_PAD) {
+      return h;
+    }
+  }
+  return null;
+}
+
 export function hitPt(cx, cy, th) {
   th = th || 10;
-  const { points, zoom, panX, panY, W, H, dpr } = app;
-  for (let i = points.length - 1; i >= 0; i--) {
-    const p = g2c(points[i].x, points[i].y);
-    const px = p.x * zoom + (panX * zoom - panX + (W / dpr) * (1 - zoom) / 2);
-    const py = p.y * zoom + (panY * zoom - panY + (H / dpr) * (1 - zoom) / 2);
-    if (Math.sqrt((cx - px) ** 2 + (cy - py) ** 2) < th) return i;
+  const { zoom, panX, panY, W, H, dpr } = app;
+  for (let pi = app.paths.length - 1; pi >= 0; pi--) {
+    const path = app.paths[pi];
+    for (let i = path.points.length - 1; i >= 0; i--) {
+      const p = g2c(path.points[i].x, path.points[i].y);
+      const px = p.x * zoom + (panX * zoom - panX + (W / dpr) * (1 - zoom) / 2);
+      const py = p.y * zoom + (panY * zoom - panY + (H / dpr) * (1 - zoom) / 2);
+      if (Math.sqrt((cx - px) ** 2 + (cy - py) ** 2) < th) return { pathId: path.id, pointIndex: i };
+    }
   }
-  return -1;
+  return null;
 }
 
 export function hitObj(cx, cy, th) {

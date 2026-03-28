@@ -1,7 +1,18 @@
 import { app } from './state.js';
 import { MARGIN } from './constants.js';
-import { g2c, c2g, maySnap, cssVar } from './coords.js';
-import { sorted, sampleSpline } from './spline.js';
+import { g2c, c2g, maySnap, cssVar, c2gFromLogical, canvasLogicalToScreen } from './coords.js';
+import { sortedPoints, sampleSpline } from './spline.js';
+import {
+  computeIntersections,
+  intersectHitColor,
+  findIntersectLabelPlacement,
+  closestPointOnRect,
+  intersectionLabelKey,
+  makeIntersectTextBox,
+  intersectionCalloutLabel,
+  effectiveCalloutMode
+} from './intersectLabels.js';
+import { drawIntersectionMarker } from './intersectMarkers.js';
 
 export function resize() {
   const r = app.container.getBoundingClientRect();
@@ -22,7 +33,7 @@ export function draw() {
   ctx.save();
   ctx.translate(panX * zoom - panX + (W / dpr) * (1 - zoom) / 2, panY * zoom - panY + (H / dpr) * (1 - zoom) / 2);
   ctx.scale(zoom, zoom);
-  drawGrid(); drawAxes(); drawRefLines(); drawSpline(); drawIntersects(); drawPoints(); drawObjects(); drawPreview();
+  drawGrid(); drawAxes(); drawRefLines(); drawSplines(); drawIntersects(); drawPoints(); drawObjects(); drawPreview();
   ctx.restore();
 }
 
@@ -134,129 +145,214 @@ function drawRefLines() {
   });
 }
 
-function drawSpline() {
-  const { ctx, W, H, dpr, points, splineColor, splineWidth, startSlope, endSlope, graphRange } = app;
-  if (points.length < 2) return;
-  const samples = sampleSpline(50);
-  if (samples.length < 2) return;
-  ctx.strokeStyle = splineColor; ctx.lineWidth = splineWidth;
-  ctx.beginPath();
-  const s0 = g2c(samples[0].x, samples[0].y); ctx.moveTo(s0.x, s0.y);
-  for (let i = 1; i < samples.length; i++) { const s = g2c(samples[i].x, samples[i].y); ctx.lineTo(s.x, s.y); }
-  ctx.stroke();
+function drawSplines() {
+  const { ctx, W, H, dpr, graphRange } = app;
+  app.paths.forEach(path => {
+    if (path.points.length < 2) return;
+    const samples = sampleSpline(path, 50);
+    if (samples.length < 2) return;
+    ctx.strokeStyle = path.color; ctx.lineWidth = path.width;
+    ctx.beginPath();
+    const s0 = g2c(samples[0].x, samples[0].y); ctx.moveTo(s0.x, s0.y);
+    for (let i = 1; i < samples.length; i++) { const s = g2c(samples[i].x, samples[i].y); ctx.lineTo(s.x, s.y); }
+    ctx.stroke();
 
-  if (sorted().length >= 2) {
-    const pts = sorted();
-    const aLen = 25;
-    const pw = W / dpr - MARGIN.left - MARGIN.right, ph = H / dpr - MARGIN.top - MARGIN.bottom;
-    const xR = graphRange.xMax - graphRange.xMin, yR = graphRange.yMax - graphRange.yMin;
-    const scaleRatio = (ph / yR) / (pw / xR);
-    [[pts[0], startSlope], [pts[pts.length - 1], endSlope]].forEach(([pt, slope]) => {
-      const p = g2c(pt.x, pt.y);
-      const dxC = aLen, dyC = -slope * scaleRatio * aLen;
-      ctx.strokeStyle = 'rgba(245,158,11,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(p.x - dxC, p.y - dyC); ctx.lineTo(p.x + dxC, p.y + dyC); ctx.stroke();
-      ctx.setLineDash([]);
-    });
-  }
+    const pts = sortedPoints(path.points);
+    if (pts.length >= 2) {
+      const aLen = 25;
+      const pw = W / dpr - MARGIN.left - MARGIN.right, ph = H / dpr - MARGIN.top - MARGIN.bottom;
+      const xR = graphRange.xMax - graphRange.xMin, yR = graphRange.yMax - graphRange.yMin;
+      const scaleRatio = (ph / yR) / (pw / xR);
+      [[pts[0], path.startSlope], [pts[pts.length - 1], path.endSlope]].forEach(([pt, slope]) => {
+        const p = g2c(pt.x, pt.y);
+        const dxC = aLen, dyC = -slope * scaleRatio * aLen;
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = cssVar('--accent-orange'); ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(p.x - dxC, p.y - dyC); ctx.lineTo(p.x + dxC, p.y + dyC); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      });
+    }
+  });
 }
 
 function drawPoints() {
-  const { ctx, H, dpr, points, selectedPointIdx } = app;
-  const ptCol = cssVar('--point-default'), selCol = cssVar('--point-selected'), bgCol = cssVar('--bg-deep');
-  points.forEach((pt, i) => {
-    const p = g2c(pt.x, pt.y), sel = i === selectedPointIdx, r = sel ? 7 : 5;
-    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = sel ? selCol : ptCol; ctx.fill();
-    ctx.strokeStyle = bgCol; ctx.lineWidth = 2; ctx.stroke();
-    if (sel) {
-      ctx.setLineDash([3, 3]); ctx.strokeStyle = selCol + '66'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, H / dpr - MARGIN.bottom);
-      ctx.moveTo(p.x, p.y); ctx.lineTo(MARGIN.left, p.y); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = selCol; ctx.font = '12px "JetBrains Mono",monospace';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-      ctx.fillText(`(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`, p.x + 10, p.y - 6);
-    }
+  const { ctx, H, dpr, selectedPoint } = app;
+  const selCol = cssVar('--point-selected'), bgCol = cssVar('--bg-deep');
+  app.paths.forEach(path => {
+    path.points.forEach((pt, i) => {
+      const p = g2c(pt.x, pt.y);
+      const sel = selectedPoint && selectedPoint.pathId === path.id && selectedPoint.pointIndex === i;
+      const r = sel ? 7 : 5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = sel ? selCol : path.color; ctx.fill();
+      ctx.strokeStyle = bgCol; ctx.lineWidth = 2; ctx.stroke();
+      if (sel) {
+        ctx.setLineDash([3, 3]); ctx.strokeStyle = cssVar('--point-selected-dim'); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, H / dpr - MARGIN.bottom);
+        ctx.moveTo(p.x, p.y); ctx.lineTo(MARGIN.left, p.y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = selCol; ctx.font = '12px "JetBrains Mono",monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        ctx.fillText(`(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`, p.x + 10, p.y - 6);
+      }
+    });
   });
 }
 
 function drawIntersects() {
-  const { ctx, showIntersects, points, graphRange, objects, intersectColor } = app;
-  if (!showIntersects || points.length < 2) return;
-  const samples = sampleSpline(80);
-  const yBase = (graphRange.yMin <= 0 && graphRange.yMax >= 0) ? 0 : graphRange.yMin;
-  const ints = [];
-
-  function slopeAt(i) {
-    const dx = samples[Math.min(i + 1, samples.length - 1)].x - samples[Math.max(i - 1, 0)].x;
-    const dy = samples[Math.min(i + 1, samples.length - 1)].y - samples[Math.max(i - 1, 0)].y;
-    return dx === 0 ? Infinity : dy / dx;
+  const { ctx, showIntersects, graphRange, objects, W, H, dpr } = app;
+  if (!showIntersects) {
+    app._intersectLabelHits = [];
+    app._intersectMarkerHits = [];
+    return;
   }
 
-  for (let i = 0; i < samples.length - 1; i++) {
-    if ((samples[i].y - yBase) * (samples[i + 1].y - yBase) < 0) {
-      const t = (yBase - samples[i].y) / (samples[i + 1].y - samples[i].y);
-      const ix = samples[i].x + t * (samples[i + 1].x - samples[i].x);
-      const sl = slopeAt(i);
-      ints.push({ x: ix, y: yBase, axis: 'X', slope: sl });
-    }
-  }
-  objects.forEach(o => {
-    if (o.hidden) return;
-    if (o.type === 'hline') for (let i = 0; i < samples.length - 1; i++) {
-      if ((samples[i].y - o.value) * (samples[i + 1].y - o.value) <= 0) {
-        const dy = samples[i + 1].y - samples[i].y; if (Math.abs(dy) < 1e-10) continue;
-        const t = (o.value - samples[i].y) / dy;
-        const sl = slopeAt(i);
-        ints.push({ x: samples[i].x + t * (samples[i + 1].x - samples[i].x), y: o.value, axis: 'H-Ref', slope: sl });
-      }
-    }
-    if (o.type === 'vline') for (let i = 0; i < samples.length - 1; i++) {
-      if ((samples[i].x - o.value) * (samples[i + 1].x - o.value) <= 0) {
-        const dx = samples[i + 1].x - samples[i].x; if (Math.abs(dx) < 1e-10) continue;
-        const t = (o.value - samples[i].x) / dx;
-        const sl = slopeAt(i);
-        ints.push({ x: o.value, y: samples[i].y + t * (samples[i + 1].y - samples[i].y), axis: 'V-Ref', slope: sl });
-      }
-    }
+  const allInts = [];
+  const pathSamples = new Map();
+  const pL = MARGIN.left, pR = W / dpr - MARGIN.right, pT = MARGIN.top, pB = H / dpr - MARGIN.bottom;
+  const plot = { left: pL, right: pR, top: pT, bottom: pB };
+
+  const strokes = [];
+  app.paths.forEach(path => {
+    if (path.points.length < 2) return;
+    const samples = sampleSpline(path, 80);
+    strokes.push({
+      points: samples.map(s => g2c(s.x, s.y)),
+      halfWidth: Math.max(1, (path.width || 2) / 2)
+    });
   });
-  ints.forEach(pt => {
+
+  app.paths.forEach(path => {
+    if (path.points.length < 2) return;
+    const samples = sampleSpline(path, 80);
+    pathSamples.set(path.id, samples);
+    const ints = computeIntersections(samples, graphRange, objects, path.id);
+    ints.forEach(int => allInts.push({ ...int, pathId: path.id, pathColor: path.color }));
+  });
+
+  const defIc = cssVar('--intersect-default');
+  const selCyan = cssVar('--accent-cyan');
+  const markerShapes = app.intersectionMarkerShapes;
+  app._intersectMarkerHits = [];
+  allInts.forEach(pt => {
     const p = g2c(pt.x, pt.y);
-    ctx.beginPath(); ctx.moveTo(p.x - 5, p.y - 5); ctx.lineTo(p.x + 5, p.y + 5);
-    ctx.moveTo(p.x + 5, p.y - 5); ctx.lineTo(p.x - 5, p.y + 5);
-    ctx.strokeStyle = intersectColor || cssVar('--intersect-default'); ctx.lineWidth = 2; ctx.stroke();
+    const key = intersectionLabelKey(pt.pathId, pt);
+    const scr = canvasLogicalToScreen(p.x, p.y);
+    app._intersectMarkerHits.push({ key, sx: scr.x, sy: scr.y });
+    const { x: px, y: py } = p;
+    const sel = app.selectedIntersectionKey === key;
+    const shape = markerShapes[key] || 'brackets';
+    const hitCol = intersectHitColor(pt, objects, cssVar);
+    const strokeCol = sel ? selCyan : hitCol || defIc;
+    const lw = sel ? 2.5 : 2;
+    drawIntersectionMarker(ctx, shape, px, py, strokeCol, lw);
   });
+
+  ctx.font = '12px "JetBrains Mono",monospace';
+  const placedBoxes = [];
+  const positions = app.intersectionLabelPositions;
+  const calloutModes = app.intersectionCalloutModes;
+  app._intersectLabelHits = [];
+  const hitPad = 4;
+  allInts.forEach(pt => {
+    const p = g2c(pt.x, pt.y);
+    const key = intersectionLabelKey(pt.pathId, pt);
+    const eff = effectiveCalloutMode(pt, calloutModes[key]);
+    const lbl = intersectionCalloutLabel(pt, eff);
+    if (lbl === null) return;
+
+    const col = intersectHitColor(pt, objects, cssVar);
+    const tw = ctx.measureText(lbl).width;
+    const th = 14;
+    const ovr = positions[key];
+    let place;
+    if (ovr) {
+      const lc = g2c(ovr.gx, ovr.gy);
+      place = makeIntersectTextBox(lc.x, lc.y, tw, th);
+    } else {
+      place = findIntersectLabelPlacement(p.x, p.y, tw, th, plot, strokes, placedBoxes, pt.axis);
+    }
+    const tail = closestPointOnRect(p.x, p.y, place);
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(tail.x, tail.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = col;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, place.cx, place.cy);
+    placedBoxes.push(place);
+    const tl = canvasLogicalToScreen(place.left - hitPad, place.top - hitPad);
+    const br = canvasLogicalToScreen(place.right + hitPad, place.bottom + hitPad);
+    const labelG = ovr ? { gx: ovr.gx, gy: ovr.gy } : c2gFromLogical(place.cx, place.cy);
+    app._intersectLabelHits.push({
+      key,
+      left: Math.min(tl.x, br.x),
+      right: Math.max(tl.x, br.x),
+      top: Math.min(tl.y, br.y),
+      bottom: Math.max(tl.y, br.y),
+      labelGx: labelG.x,
+      labelGy: labelG.y
+    });
+  });
+
   const el = document.getElementById('intersectList');
-  el.innerHTML = ints.length ? ints.map((p, idx) => {
-    const slopeStr = Math.abs(p.slope) > 1e6 ? '\u221E' : p.slope.toFixed(3);
-    return `<div class="intersect-item"><span>${idx + 1} ${p.axis}</span> X=${p.x.toFixed(2)} Y=${p.y.toFixed(2)} m=${slopeStr}</div>`;
-  }).join('') : '<div style="font-size:10px;color:var(--text-dim)">No intersections</div>';
+  if (allInts.length) {
+    el.innerHTML = allInts.map((p, idx) => {
+      const slopeStr = Math.abs(p.slope) > 1e6 ? '\u221E' : p.slope.toFixed(3);
+      const pathIdx = app.paths.findIndex(pa => pa.id === p.pathId) + 1;
+      return `<div class="intersect-item"><span style="color:${p.pathColor}">P${pathIdx} ${p.axis}</span> X=${p.x.toFixed(2)} Y=${p.y.toFixed(2)} m=${slopeStr}</div>`;
+    }).join('');
+  } else {
+    el.innerHTML = '<div style="font-size:10px;color:var(--text-dim)">No intersections</div>';
+  }
 
   const pmSection = document.getElementById('pathMeasureSection');
   const pmList = document.getElementById('pathMeasureList');
-  if (ints.length >= 2) {
-    const sortedInts = [...ints].sort((a, b) => a.x - b.x);
-    let pmHtml = '';
+  const byPath = {};
+  allInts.forEach(int => {
+    if (!byPath[int.pathId]) byPath[int.pathId] = { ints: [], color: int.pathColor };
+    byPath[int.pathId].ints.push(int);
+  });
+
+  let pmHtml = '';
+  let anyMeasures = false;
+  for (const [pathId, data] of Object.entries(byPath)) {
+    if (data.ints.length < 2) continue;
+    anyMeasures = true;
+    const samples = pathSamples.get(parseInt(pathId));
+    const sortedInts = [...data.ints].sort((a, b) => a.x - b.x);
+    const pathIdx = app.paths.findIndex(p => p.id === parseInt(pathId)) + 1;
+    pmHtml += `<div style="font-size:10px;color:${data.color};font-family:'JetBrains Mono',monospace;margin-top:4px;">Path ${pathIdx}</div>`;
     for (let k = 0; k < sortedInts.length - 1; k++) {
       const ia = sortedInts[k], ib = sortedInts[k + 1];
       let arcLen = 0;
       for (let j = 0; j < samples.length - 1; j++) {
         const sx = samples[j].x, snx = samples[j + 1].x;
         if (sx >= ia.x && snx <= ib.x) {
-          const dx = samples[j + 1].x - samples[j].x;
-          const dy = samples[j + 1].y - samples[j].y;
-          arcLen += Math.sqrt(dx * dx + dy * dy);
+          const ddx = samples[j + 1].x - samples[j].x;
+          const ddy = samples[j + 1].y - samples[j].y;
+          arcLen += Math.sqrt(ddx * ddx + ddy * ddy);
         }
       }
-      const dxStraight = ib.x - ia.x;
-      const dyStraight = ib.y - ia.y;
-      const straight = Math.sqrt(dxStraight * dxStraight + dyStraight * dyStraight);
-      pmHtml += `<div class="intersect-item"><span>${k + 1}\u2192${k + 2}</span> path=${arcLen.toFixed(2)} straight=${straight.toFixed(2)}</div>`;
+      const dxS = ib.x - ia.x, dyS = ib.y - ia.y;
+      const straight = Math.sqrt(dxS * dxS + dyS * dyS);
+      pmHtml += `<div class="intersect-item"><span style="color:${data.color}">${k + 1}\u2192${k + 2}</span> path=${arcLen.toFixed(2)} straight=${straight.toFixed(2)}</div>`;
     }
+  }
+
+  if (anyMeasures) {
     pmList.innerHTML = pmHtml;
     pmSection.style.display = 'block';
   } else {
-    pmSection.style.display = ints.length ? 'block' : 'none';
+    pmSection.style.display = allInts.length ? 'block' : 'none';
     pmList.innerHTML = '<div style="font-size:10px;color:var(--text-dim)">Need 2+ intersects</div>';
   }
 }
@@ -277,7 +373,7 @@ function drawObjects() {
         ctx.beginPath(); ctx.arc(a.x, a.y, sel ? 5 : 4, 0, Math.PI * 2); ctx.fillStyle = sel ? cssVar('--accent-cyan') : (o.borderColor || cssVar('--callout-border')); ctx.fill();
         ctx.strokeStyle = cssVar('--bg-deep'); ctx.lineWidth = 1; ctx.stroke();
       }
-      ctx.fillStyle = sel ? cssVar('--accent-cyan') + '1e' : (o.bgColor || cssVar('--callout-bg'));
+      ctx.fillStyle = sel ? cssVar('--accent-cyan-subtle') : (o.bgColor || cssVar('--callout-bg'));
       ctx.strokeStyle = sel ? cssVar('--accent-cyan') : (o.borderColor || cssVar('--callout-border')); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(p.x - w / 2, p.y - h / 2, w, h, 3); ctx.fill(); ctx.stroke();
       ctx.fillStyle = sel ? cssVar('--accent-cyan') : (o.textColor || cssVar('--callout-text')); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

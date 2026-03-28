@@ -20,27 +20,41 @@ export const app = {
 
   activeTool: 'select',
 
-  splineColor: '#4a90d9',
-  splineWidth: 2,
-  startSlope: 0,
-  endSlope: 0,
-
-  points: [
-    { x: 0, y: 0, id: 1, segType: 'cubic', segTension: 0.5 },
-    { x: 360, y: 100, id: 2, segType: 'cubic', segTension: 0.5 }
+  paths: [
+    {
+      id: 1,
+      points: [
+        { x: 0, y: 0, id: 1, segType: 'cubic', segTension: 0.5 },
+        { x: 360, y: 100, id: 2, segType: 'cubic', segTension: 0.5 }
+      ],
+      startSlope: 0,
+      endSlope: 0,
+      color: '#4a90d9',
+      width: 2,
+    }
   ],
+  activePathId: 1,
+  nextPathId: 2,
+
   objects: [],
 
-  selectedPointIdx: -1,
+  selectedPoint: null,
   selectedObjectId: null,
 
-  draggingPoint: -1,
+  draggingPointInfo: null,
   draggingObject: null,
   draggingCalloutPart: null,
   dragOffset: { x: 0, y: 0 },
 
   showIntersects: true,
-  intersectColor: '',
+  /** @type {Record<string, { gx: number, gy: number }>} graph-space center for intersection callout labels */
+  intersectionLabelPositions: {},
+  /** @type {Record<string, 'x'|'y'|'both'|'off'>} callout; missing = axis default (X or Y) */
+  intersectionCalloutModes: {},
+  /** @type {Record<string, 'brackets'|'circle'|'square'|'diamond'|'plus'|'both'>} */
+  intersectionMarkerShapes: {},
+  selectedIntersectionKey: null,
+  draggingIntersectLabel: null,
 
   lineStart: null,
   nextId: 3,
@@ -54,12 +68,23 @@ export const app = {
   editingCallout: null,
 };
 
+export function getPath(pathId) {
+  return app.paths.find(p => p.id === pathId);
+}
+
+export function activePath() {
+  return app.paths.find(p => p.id === app.activePathId);
+}
+
 export function saveState() {
   app.undoStack.push(JSON.stringify({
-    points: app.points,
+    paths: app.paths,
+    activePathId: app.activePathId,
+    nextPathId: app.nextPathId,
     objects: app.objects,
-    startSlope: app.startSlope,
-    endSlope: app.endSlope,
+    intersectionLabelPositions: app.intersectionLabelPositions,
+    intersectionCalloutModes: app.intersectionCalloutModes,
+    intersectionMarkerShapes: app.intersectionMarkerShapes,
   }));
   if (app.undoStack.length > 50) app.undoStack.shift();
   app.redoStack = [];

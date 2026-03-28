@@ -1,14 +1,28 @@
 import { app } from '../state.js';
 import { MARGIN } from '../constants.js';
 import { g2c, cssVar } from '../coords.js';
-import { sorted, sampleSpline } from '../spline.js';
+import { sortedPoints, sampleSpline } from '../spline.js';
+import {
+  computeIntersections,
+  intersectHitColor,
+  findIntersectLabelPlacement,
+  closestPointOnRect,
+  intersectionLabelKey,
+  makeIntersectTextBox,
+  intersectionCalloutLabel,
+  effectiveCalloutMode
+} from '../intersectLabels.js';
+import { intersectMarkerSvg } from '../intersectMarkers.js';
 
 export function exportSvg() {
-  const { W, H, dpr, graphRange, gridStep, axisLabels, points, objects, splineColor, splineWidth, startSlope, endSlope, showIntersects, intersectColor } = app;
+  const { W, H, dpr, graphRange, gridStep, axisLabels, paths, objects, showIntersects, intersectionLabelPositions, intersectionCalloutModes, intersectionMarkerShapes } = app;
+  const intLabelPos = intersectionLabelPositions || {};
+  const intCalloutModes = intersectionCalloutModes || {};
+  const intMarkerShapes = intersectionMarkerShapes || {};
   const sw = W / dpr, sh = H / dpr; const bgExport = cssVar('--bg-deep');
   const pL = MARGIN.left, pR = sw - MARGIN.right, pT = MARGIN.top, pB = sh - MARGIN.bottom, pw = pR - pL, ph = pB - pT;
   const xR = graphRange.xMax - graphRange.xMin, yR = graphRange.yMax - graphRange.yMin;
-  const gridCol = cssVar('--border'), axisCol = cssVar('--axis-color'), ptCol = cssVar('--point-default');
+  const gridCol = cssVar('--border'), axisCol = cssVar('--axis-color');
   const tickCol = cssVar('--axis-tick'), titleCol = cssVar('--axis-title');
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">`;
@@ -53,46 +67,66 @@ export function exportSvg() {
     }
   });
 
-  if (points.length >= 2) {
-    const samples = sampleSpline(60); let d = '';
-    samples.forEach((s, i) => { const p = g2c(s.x, s.y); d += (i === 0 ? 'M' : 'L') + `${p.x.toFixed(2)},${p.y.toFixed(2)} `; });
-    svg += `<path d="${d}" fill="none" stroke="${splineColor}" stroke-width="${splineWidth}"/>`;
-  }
+  const plotBounds = { left: pL, right: pR, top: pT, bottom: pB };
+  const intersectStrokes = paths
+    .filter(path => path.points.length >= 2)
+    .map(path => {
+      const samples = sampleSpline(path, 80);
+      return {
+        points: samples.map(s => g2c(s.x, s.y)),
+        halfWidth: Math.max(1, (path.width || 2) / 2)
+      };
+    });
+  let intersectPlacedBoxes = [];
 
-  if (points.length >= 2) {
-    const pts = sorted(); const aLen = 25;
-    const scaleRatio = (ph / yR) / (pw / xR);
-    [[pts[0], startSlope], [pts[pts.length - 1], endSlope]].forEach(([pt, slope]) => {
+  // Splines, slope ticks, intersections, and points — per path
+  paths.forEach(path => {
+    if (path.points.length < 2) return;
+    const samples = sampleSpline(path, 60); let d = '';
+    samples.forEach((s, i) => { const p = g2c(s.x, s.y); d += (i === 0 ? 'M' : 'L') + `${p.x.toFixed(2)},${p.y.toFixed(2)} `; });
+    svg += `<path d="${d}" fill="none" stroke="${path.color}" stroke-width="${path.width}"/>`;
+
+    const pts = sortedPoints(path.points);
+    const aLen = 25, scaleRatio = (ph / yR) / (pw / xR);
+    [[pts[0], path.startSlope], [pts[pts.length - 1], path.endSlope]].forEach(([pt, slope]) => {
       const p = g2c(pt.x, pt.y);
       const dxC = aLen, dyC = -slope * scaleRatio * aLen;
-      svg += `<line x1="${p.x - dxC}" y1="${p.y - dyC}" x2="${p.x + dxC}" y2="${p.y + dyC}" stroke="rgba(245,158,11,0.5)" stroke-width="1.5" stroke-dasharray="3,3"/>`;
+      svg += `<line x1="${p.x - dxC}" y1="${p.y - dyC}" x2="${p.x + dxC}" y2="${p.y + dyC}" stroke="${cssVar('--accent-orange')}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.5"/>`;
     });
-  }
 
-  if (showIntersects && points.length >= 2) {
-    const samples = sampleSpline(80);
-    const yBase = (graphRange.yMin <= 0 && graphRange.yMax >= 0) ? 0 : graphRange.yMin;
-    const ints = [];
-    for (let i = 0; i < samples.length - 1; i++) {
-      if ((samples[i].y - yBase) * (samples[i + 1].y - yBase) < 0) {
-        const t = (yBase - samples[i].y) / (samples[i + 1].y - samples[i].y);
-        ints.push({ x: samples[i].x + t * (samples[i + 1].x - samples[i].x), y: yBase });
-      }
+    if (showIntersects) {
+      const intSamples = sampleSpline(path, 80);
+      const ints = computeIntersections(intSamples, graphRange, objects, path.id);
+      ints.forEach(pt => {
+        const p = g2c(pt.x, pt.y);
+        const key = intersectionLabelKey(path.id, pt);
+        const shape = intMarkerShapes[key] || 'brackets';
+        const hitC = intersectHitColor(pt, objects, cssVar);
+        svg += intersectMarkerSvg(shape, p.x, p.y, hitC, 2);
+        const eff = effectiveCalloutMode(pt, intCalloutModes[key]);
+        const lbl = intersectionCalloutLabel(pt, eff);
+        if (lbl !== null) {
+          const col = intersectHitColor(pt, objects, cssVar);
+          const tw = Math.max(24, lbl.length * 7.4);
+          const th = 14;
+          const ovr = intLabelPos[key];
+          let place;
+          if (ovr) {
+            const lc = g2c(ovr.gx, ovr.gy);
+            place = makeIntersectTextBox(lc.x, lc.y, tw, th);
+          } else {
+            place = findIntersectLabelPlacement(p.x, p.y, tw, th, plotBounds, intersectStrokes, intersectPlacedBoxes, pt.axis);
+          }
+          const tail = closestPointOnRect(p.x, p.y, place);
+          svg += `<line x1="${p.x.toFixed(2)}" y1="${p.y.toFixed(2)}" x2="${tail.x.toFixed(2)}" y2="${tail.y.toFixed(2)}" stroke="${col}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.55"/>`;
+          svg += `<text x="${place.cx.toFixed(2)}" y="${place.cy.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${col}" font-size="12">${lbl}</text>`;
+          intersectPlacedBoxes.push(place);
+        }
+      });
     }
-    objects.forEach(o => {
-      if (o.hidden) return;
-      if (o.type === 'hline') for (let i = 0; i < samples.length - 1; i++) { if ((samples[i].y - o.value) * (samples[i + 1].y - o.value) <= 0) { const dy = samples[i + 1].y - samples[i].y; if (Math.abs(dy) < 1e-10) continue; const t = (o.value - samples[i].y) / dy; ints.push({ x: samples[i].x + t * (samples[i + 1].x - samples[i].x), y: o.value }); } }
-      if (o.type === 'vline') for (let i = 0; i < samples.length - 1; i++) { if ((samples[i].x - o.value) * (samples[i + 1].x - o.value) <= 0) { const dx = samples[i + 1].x - samples[i].x; if (Math.abs(dx) < 1e-10) continue; const t = (o.value - samples[i].x) / dx; ints.push({ x: o.value, y: samples[i].y + t * (samples[i + 1].y - samples[i].y) }); } }
-    });
-    ints.forEach(pt => {
-      const p = g2c(pt.x, pt.y);
-      const iCol = intersectColor || cssVar('--intersect-default');
-      svg += `<line x1="${p.x - 5}" y1="${p.y - 5}" x2="${p.x + 5}" y2="${p.y + 5}" stroke="${iCol}" stroke-width="2"/>`;
-      svg += `<line x1="${p.x + 5}" y1="${p.y - 5}" x2="${p.x - 5}" y2="${p.y + 5}" stroke="${iCol}" stroke-width="2"/>`;
-    });
-  }
 
-  points.forEach(pt => { const p = g2c(pt.x, pt.y); svg += `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${ptCol}" stroke="${bgExport}" stroke-width="2"/>`; });
+    path.points.forEach(pt => { const p = g2c(pt.x, pt.y); svg += `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${path.color}" stroke="${bgExport}" stroke-width="2"/>`; });
+  });
 
   objects.forEach(o => {
     if (o.hidden) return;

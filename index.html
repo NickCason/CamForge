@@ -36,7 +36,6 @@
       <button id="tool-intersect" class="active" title="Intersections (I)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg>Intersects
       </button>
-      <input type="color" id="intersectColor" value="#34d399" title="Intersect marker color" style="width:22px;height:22px;border:1px solid var(--border);border-radius:3px;cursor:pointer;padding:0;background:none;margin-left:-2px;">
     </div>
     <div class="top-actions">
       <button id="btnTheme" title="Toggle light/dark mode">☀ Light</button>
@@ -49,24 +48,8 @@
 
   <div class="left-panel">
     <div class="panel-section flex-grow">
-      <div class="panel-section-title">Spline Points <span class="count" id="pointCount">0 pts</span></div>
-      <div class="slope-row" id="startSlopeRow">
-        <span class="slope-label">Start dy/dx</span>
-        <input type="number" id="startSlope" value="0" step="0.1">
-        <span class="slope-hint">entry slope</span>
-      </div>
-      <div class="point-table-header"><span>#</span><span>X</span><span>Y</span><span>Segment</span><span></span></div>
-      <div class="point-list" id="pointList"></div>
-      <div class="slope-row" id="endSlopeRow" style="margin-top:6px;">
-        <span class="slope-label">End dy/dx</span>
-        <input type="number" id="endSlope" value="0" step="0.1">
-        <span class="slope-hint">exit slope</span>
-      </div>
-      <div class="add-point-row">
-        <input type="text" id="addX" placeholder="X">
-        <input type="text" id="addY" placeholder="Y">
-        <button id="btnAddPoint">+</button>
-      </div>
+      <div class="panel-section-title">Paths <button id="btnAddPath" class="path-add-path-btn">+ Add Path</button></div>
+      <div id="pathPanelsRoot"></div>
     </div>
     <div class="panel-section">
       <div class="panel-section-title">Objects <span class="count" id="objCount">0</span></div>
@@ -128,15 +111,6 @@
       <label>Axis Labels</label>
       <div class="prop-row"><span class="prop-label">X Axis</span><input type="text" id="xLabel" value="Degrees (°)"></div>
       <div class="prop-row"><span class="prop-label">Y Axis</span><input type="text" id="yLabel" value="Displacement (mm)"></div>
-    </div>
-    <div class="prop-group">
-      <label>Spline Display</label>
-      <div class="prop-row">
-        <span class="prop-label">Color</span>
-        <input type="color" class="color-swatch" id="splineColor" value="#4a90d9">
-        <input type="number" id="splineWidth" value="2" min="1" max="8" step="0.5" style="width:50px">
-        <span style="font-size:10px;color:var(--text-dim)">px</span>
-      </div>
     </div>
     <div class="prop-group" id="selectionProps" style="display:none;">
       <label>Selection Properties</label>
