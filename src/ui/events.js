@@ -1,10 +1,34 @@
 import { app, saveState, getPath, activePath } from '../state.js';
-import { c2g, maySnap, cssVar } from '../coords.js';
+import { c2g, cssVar } from '../coords.js';
 import { draw, resize } from '../render.js';
 import { hitPt, hitObj, hitIntersectLabel, hitIntersectMarker } from '../hitTest.js';
 import { undo, redo } from '../history.js';
 import { refreshPathPanels, refreshObjectList, showSelProps, showIntersectionProps, updateAnalytics, refreshAll, addNewPath } from './panels.js';
 import { exportSvg } from './exportSvg.js';
+import { resolveSnap } from '../snapEngine.js';
+
+function setPanelState(side, open) {
+  const layout = document.querySelector('.app-layout');
+  const panel = document.querySelector(side === 'left' ? '.left-panel' : '.right-panel');
+  if (side === 'left') {
+    app.leftPanelOpen = open;
+    layout.classList.toggle('left-collapsed', !open);
+    panel.classList.toggle('collapsed', !open);
+  } else {
+    app.rightPanelOpen = open;
+    layout.classList.toggle('right-collapsed', !open);
+    panel.classList.toggle('collapsed', !open);
+  }
+  setTimeout(resize, 260);
+}
+
+function toggleLeftPanel() {
+  setPanelState('left', !app.leftPanelOpen);
+}
+
+function toggleRightPanel() {
+  setPanelState('right', !app.rightPanelOpen);
+}
 
 function setTool(t) {
   app.activeTool = t;
@@ -22,10 +46,42 @@ function toggleIntersects() {
   draw();
 }
 
-function toggleSnap() {
-  app.snapEnabled = !app.snapEnabled;
-  document.getElementById('statusSnap').textContent = app.snapEnabled ? 'Snap: Grid' : 'Snap: Off';
-  document.getElementById('statusSnap').style.color = app.snapEnabled ? '' : 'var(--accent-orange)';
+function snapSummary() {
+  const parts = [];
+  if (app.snapToGrid) parts.push('Grid');
+  if (app.snapToPathNodes) parts.push('Nodes');
+  if (app.snapToPathCurve) parts.push('Curve');
+  return parts.length ? 'Snap: ' + parts.join('+') : 'Snap: Off';
+}
+
+function syncSnapUI() {
+  const el = document.getElementById('statusSnap');
+  document.getElementById('snapLabel').textContent = snapSummary();
+  const anyOn = app.snapToGrid || app.snapToPathNodes || app.snapToPathCurve;
+  el.style.color = anyOn ? '' : 'var(--accent-orange)';
+  document.getElementById('snapGrid').checked = app.snapToGrid;
+  document.getElementById('snapNodes').checked = app.snapToPathNodes;
+  document.getElementById('snapCurve').checked = app.snapToPathCurve;
+  document.getElementById('snapActiveOnly').checked = app.snapActivePathOnly;
+}
+
+let _snapSaved = null;
+
+function toggleSnapMaster() {
+  const anyOn = app.snapToGrid || app.snapToPathNodes || app.snapToPathCurve;
+  if (anyOn) {
+    _snapSaved = { g: app.snapToGrid, n: app.snapToPathNodes, c: app.snapToPathCurve };
+    app.snapToGrid = false; app.snapToPathNodes = false; app.snapToPathCurve = false;
+  } else {
+    const s = _snapSaved || { g: true, n: true, c: true };
+    app.snapToGrid = s.g; app.snapToPathNodes = s.n; app.snapToPathCurve = s.c;
+    _snapSaved = null;
+  }
+  syncSnapUI();
+}
+
+function pointerSnap(gx, gy, shiftKey, excludePathId, excludePointIndex) {
+  return resolveSnap(gx, gy, { shiftKey, excludePathId, excludePointIndex });
 }
 
 function toggleTheme() {
@@ -111,7 +167,14 @@ export function initEvents() {
     const r = canvas.getBoundingClientRect(); app.mouseCanvasX = e.clientX - r.left; app.mouseCanvasY = e.clientY - r.top;
     const gp = c2g(app.mouseCanvasX, app.mouseCanvasY);
     document.getElementById('cursorReadout').innerHTML = `X: <span>${gp.x.toFixed(3)}</span> &nbsp; Y: <span>${gp.y.toFixed(3)}</span>`;
-    if (app.isPanning) { app.panX += (e.clientX - app.panStart.x) / app.zoom; app.panY += (e.clientY - app.panStart.y) / app.zoom; app.panStart = { x: e.clientX, y: e.clientY }; draw(); return; }
+    if (app.isPanning) {
+      const dx = e.clientX - app.panStart.x, dy = e.clientY - app.panStart.y;
+      app.panX -= dx / app.zoom;
+      app.panY -= dy / app.zoom;
+      app.panStart = { x: e.clientX, y: e.clientY };
+      draw();
+      return;
+    }
     if (app.draggingIntersectLabel) {
       const g = c2g(app.mouseCanvasX, app.mouseCanvasY);
       const d = app.draggingIntersectLabel;
@@ -122,9 +185,11 @@ export function initEvents() {
     if (app.draggingPointInfo) {
       const path = getPath(app.draggingPointInfo.pathId);
       if (path) {
-        const g = c2g(app.mouseCanvasX, app.mouseCanvasY), s = maySnap(g.x, g.y, e.shiftKey);
+        const g = c2g(app.mouseCanvasX, app.mouseCanvasY);
+        const s = pointerSnap(g.x, g.y, e.shiftKey, app.draggingPointInfo.pathId, app.draggingPointInfo.pointIndex);
         path.points[app.draggingPointInfo.pointIndex].x = s.x;
         path.points[app.draggingPointInfo.pointIndex].y = s.y;
+        app.lastSnapKind = s.kind; app.lastSnapX = s.x; app.lastSnapY = s.y;
         refreshPathPanels(); updateAnalytics(); draw();
       }
       return;
@@ -132,12 +197,13 @@ export function initEvents() {
     if (app.draggingObject) {
       const g = c2g(app.mouseCanvasX, app.mouseCanvasY);
       if (app.draggingObject.type === 'callout') {
-        if (app.draggingCalloutPart === 'anchor') { app.draggingObject.anchorX = g.x + app.dragOffset.x; app.draggingObject.anchorY = g.y + app.dragOffset.y; }
-        else { app.draggingObject.x = g.x + app.dragOffset.x; app.draggingObject.y = g.y + app.dragOffset.y; }
-      } else if (app.draggingObject.type === 'hline') { app.draggingObject.value = maySnap(0, g.y, e.shiftKey).y; }
-      else if (app.draggingObject.type === 'vline') { app.draggingObject.value = maySnap(g.x, 0, e.shiftKey).x; }
+        const s = pointerSnap(g.x + app.dragOffset.x, g.y + app.dragOffset.y, e.shiftKey);
+        if (app.draggingCalloutPart === 'anchor') { app.draggingObject.anchorX = s.x; app.draggingObject.anchorY = s.y; }
+        else { app.draggingObject.x = s.x; app.draggingObject.y = s.y; }
+      } else if (app.draggingObject.type === 'hline') { app.draggingObject.value = pointerSnap(0, g.y, e.shiftKey).y; }
+      else if (app.draggingObject.type === 'vline') { app.draggingObject.value = pointerSnap(g.x, 0, e.shiftKey).x; }
       else if (app.draggingObject.type === 'line' || app.draggingObject.type === 'dimension') {
-        const s = maySnap(g.x, g.y, e.shiftKey);
+        const s = pointerSnap(g.x, g.y, e.shiftKey);
         if (app.draggingCalloutPart === 'p1') { app.draggingObject.x1 = s.x; app.draggingObject.y1 = s.y; }
         else if (app.draggingCalloutPart === 'p2') { app.draggingObject.x2 = s.x; app.draggingObject.y2 = s.y; }
         else if (app.draggingCalloutPart === 'label') { app.draggingObject.labelX = g.x + app.dragOffset.x; app.draggingObject.labelY = g.y + app.dragOffset.y; }
@@ -148,20 +214,58 @@ export function initEvents() {
           app.dragOffset.x = g.x; app.dragOffset.y = g.y;
         }
       }
+      app.lastSnapKind = 'none';
       refreshObjectList(); showSelProps(app.draggingObject); draw(); return;
     }
-    if (app.activeTool === 'select') {
+    {
       const hp = hitPt(app.mouseCanvasX, app.mouseCanvasY) !== null;
       const hi = app.showIntersects && hitIntersectLabel(app.mouseCanvasX, app.mouseCanvasY) !== null;
       const hm = app.showIntersects && hitIntersectMarker(app.mouseCanvasX, app.mouseCanvasY) !== null;
       const ho = hitObj(app.mouseCanvasX, app.mouseCanvasY) !== null;
-      canvas.style.cursor = hp || hi || hm || ho ? 'grab' : 'default';
+      const panHover = e.altKey && !hp && !hi && !hm && !ho;
+      if (app.activeTool === 'select') {
+        canvas.style.cursor = hp || hi || hm || ho || panHover ? 'grab' : 'default';
+      } else if (panHover) {
+        canvas.style.cursor = 'grab';
+      }
     }
-    if (app.lineStart && (app.activeTool === 'line' || app.activeTool === 'dimension')) draw();
+    if (app.lineStart && (app.activeTool === 'line' || app.activeTool === 'dimension')) {
+      const ps = pointerSnap(gp.x, gp.y, e.shiftKey);
+      app.lastSnapKind = ps.kind; app.lastSnapX = ps.x; app.lastSnapY = ps.y;
+      draw();
+    } else if (!app.draggingPointInfo && !app.draggingObject) {
+      app.lastSnapKind = 'none';
+    }
   });
 
   canvas.addEventListener('mousedown', e => {
-    if (e.button === 1 || (e.button === 0 && app.spaceDown)) { app.isPanning = true; app.panStart = { x: e.clientX, y: e.clientY }; canvas.style.cursor = 'grabbing'; e.preventDefault(); return; }
+    if (e.button === 1) {
+      app.isPanning = true;
+      app.panStart = { x: e.clientX, y: e.clientY };
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+      return;
+    }
+    if (e.button === 0 && app.spaceDown) {
+      app.isPanning = true;
+      app.panStart = { x: e.clientX, y: e.clientY };
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+      return;
+    }
+    if (e.button === 0 && e.altKey) {
+      const pi = hitPt(app.mouseCanvasX, app.mouseCanvasY);
+      const il = app.showIntersects ? hitIntersectLabel(app.mouseCanvasX, app.mouseCanvasY) : null;
+      const im = app.showIntersects ? hitIntersectMarker(app.mouseCanvasX, app.mouseCanvasY) : null;
+      const oi = hitObj(app.mouseCanvasX, app.mouseCanvasY);
+      if (!pi && !il && !im && !oi) {
+        app.isPanning = true;
+        app.panStart = { x: e.clientX, y: e.clientY };
+        canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.button === 2) return;
     const gp = c2g(app.mouseCanvasX, app.mouseCanvasY);
     if (app.activeTool === 'select') {
@@ -216,11 +320,12 @@ export function initEvents() {
         }
         canvas.style.cursor = 'grabbing'; refreshObjectList(); showSelProps(oi.obj); draw(); return;
       }
-      app.selectedPoint = null; app.selectedObjectId = null; app.selectedIntersectionKey = null; document.getElementById('selectionProps').style.display = 'none'; refreshPathPanels(); refreshObjectList(); draw();
+      app.selectedPoint = null; app.selectedObjectId = null; app.selectedIntersectionKey = null; document.getElementById('selectionProps').style.display = 'none';
+      refreshPathPanels(); refreshObjectList(); draw();
     }
     if (app.activeTool === 'point') {
       saveState();
-      const s = maySnap(gp.x, gp.y, e.shiftKey);
+      const s = pointerSnap(gp.x, gp.y, e.shiftKey);
       const path = activePath();
       if (path) {
         path.points.push({ x: s.x, y: s.y, id: app.nextId++, segType: 'cubic', segTension: 0.5 });
@@ -229,15 +334,15 @@ export function initEvents() {
         refreshPathPanels(); updateAnalytics(); draw();
       }
     }
-    if (app.activeTool === 'line' || app.activeTool === 'dimension') { const s = maySnap(gp.x, gp.y, e.shiftKey); if (!app.lineStart) { app.lineStart = s; } else { saveState(); app.objects.push({ type: app.activeTool === 'line' ? 'line' : 'dimension', id: app.nextId++, x1: app.lineStart.x, y1: app.lineStart.y, x2: s.x, y2: s.y, color: app.activeTool === 'line' ? cssVar('--accent-red') : cssVar('--accent-orange'), dashed: false, label: '' }); app.lineStart = null; refreshObjectList(); draw(); } }
-    if (app.activeTool === 'hline') { saveState(); const s = maySnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'hline', id: app.nextId++, value: s.y, color: '', label: '' }); refreshObjectList(); draw(); }
-    if (app.activeTool === 'vline') { saveState(); const s = maySnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'vline', id: app.nextId++, value: s.x, color: '', label: '' }); refreshObjectList(); draw(); }
-    if (app.activeTool === 'callout') { const s = maySnap(gp.x, gp.y, e.shiftKey); app.calloutPos = s; document.getElementById('calloutOverlay').classList.add('show'); document.getElementById('calloutText').value = ''; document.getElementById('calloutText').focus(); }
+    if (app.activeTool === 'line' || app.activeTool === 'dimension') { const s = pointerSnap(gp.x, gp.y, e.shiftKey); if (!app.lineStart) { app.lineStart = s; } else { saveState(); app.objects.push({ type: app.activeTool === 'line' ? 'line' : 'dimension', id: app.nextId++, x1: app.lineStart.x, y1: app.lineStart.y, x2: s.x, y2: s.y, color: app.activeTool === 'line' ? cssVar('--accent-red') : cssVar('--accent-orange'), dashed: false, label: '' }); app.lineStart = null; refreshObjectList(); draw(); } }
+    if (app.activeTool === 'hline') { saveState(); const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'hline', id: app.nextId++, value: s.y, color: '', label: '' }); refreshObjectList(); draw(); }
+    if (app.activeTool === 'vline') { saveState(); const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'vline', id: app.nextId++, value: s.x, color: '', label: '' }); refreshObjectList(); draw(); }
+    if (app.activeTool === 'callout') { const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.calloutPos = s; document.getElementById('calloutOverlay').classList.add('show'); document.getElementById('calloutText').value = ''; document.getElementById('calloutText').focus(); }
   });
 
   canvas.addEventListener('mouseup', () => {
     if (app.isPanning) { app.isPanning = false; canvas.style.cursor = app.activeTool === 'select' ? 'default' : 'crosshair'; return; }
-    if (app.draggingPointInfo) { app.draggingPointInfo = null; canvas.style.cursor = 'grab'; }
+    if (app.draggingPointInfo) { app.draggingPointInfo = null; app.lastSnapKind = 'none'; canvas.style.cursor = 'grab'; }
     if (app.draggingIntersectLabel) { app.draggingIntersectLabel = null; canvas.style.cursor = 'grab'; }
     if (app.draggingObject) { app.draggingObject = null; app.draggingCalloutPart = null; canvas.style.cursor = 'grab'; }
   });
@@ -284,8 +389,11 @@ export function initEvents() {
     if (e.key === 'g' || e.key === 'G') setTool('vline');
     if (e.key === 't' || e.key === 'T') setTool('callout');
     if (e.key === 'd' || e.key === 'D') setTool('dimension');
-    if (e.key === 's' || e.key === 'S') toggleSnap();
+    if (e.key === 's' || e.key === 'S') toggleSnapMaster();
+    if (e.key === 'Shift') app.shiftDown = true;
     if (e.key === 'i' || e.key === 'I') toggleIntersects();
+    if (e.key === '[') toggleLeftPanel();
+    if (e.key === ']') toggleRightPanel();
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (app.selectedPoint) {
         saveState();
@@ -301,7 +409,10 @@ export function initEvents() {
     if (e.ctrlKey && e.key === 'y') { redo(); e.preventDefault(); }
     if (e.key === 'Escape') { app.lineStart = null; cancelCallout(); }
   });
-  document.addEventListener('keyup', e => { if (e.code === 'Space') { app.spaceDown = false; canvas.style.cursor = app.activeTool === 'select' ? 'default' : 'crosshair'; } });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space') { app.spaceDown = false; canvas.style.cursor = app.activeTool === 'select' ? 'default' : 'crosshair'; }
+    if (e.key === 'Shift') app.shiftDown = false;
+  });
 
   document.querySelectorAll('#mainToolbar button').forEach(btn => {
     btn.addEventListener('click', () => { const t = btn.id.replace('tool-', ''); if (t === 'intersect') { toggleIntersects(); return; } setTool(t); });
@@ -315,7 +426,20 @@ export function initEvents() {
     btn.addEventListener('click', () => ctxAction(btn.dataset.action));
   });
 
-  document.getElementById('statusSnap').addEventListener('click', toggleSnap);
+  const snapEl = document.getElementById('statusSnap');
+  const snapPop = document.getElementById('snapPopover');
+  snapEl.addEventListener('click', e => {
+    if (snapPop.contains(e.target)) return;
+    snapPop.classList.toggle('show');
+  });
+  document.addEventListener('click', e => {
+    if (!snapEl.contains(e.target)) snapPop.classList.remove('show');
+  });
+  document.getElementById('snapGrid').addEventListener('change', e => { app.snapToGrid = e.target.checked; syncSnapUI(); });
+  document.getElementById('snapNodes').addEventListener('change', e => { app.snapToPathNodes = e.target.checked; syncSnapUI(); });
+  document.getElementById('snapCurve').addEventListener('change', e => { app.snapToPathCurve = e.target.checked; syncSnapUI(); });
+  document.getElementById('snapActiveOnly').addEventListener('change', e => { app.snapActivePathOnly = e.target.checked; });
+  syncSnapUI();
 
   ['xMin', 'xMax', 'yMin', 'yMax'].forEach(id => { document.getElementById(id).addEventListener('change', e => { app.graphRange[id] = parseFloat(e.target.value); draw(); }); });
   ['xGrid', 'yGrid'].forEach(id => { document.getElementById(id).addEventListener('change', e => { app.gridStep[id === 'xGrid' ? 'x' : 'y'] = parseFloat(e.target.value); draw(); }); });
@@ -352,6 +476,36 @@ export function initEvents() {
   });
   document.getElementById('btnExport').addEventListener('click', exportSvg);
   document.getElementById('btnAddPath').addEventListener('click', addNewPath);
+
+  document.getElementById('btnToggleLeft').addEventListener('click', toggleLeftPanel);
+  document.getElementById('btnToggleRight').addEventListener('click', toggleRightPanel);
+
+  function syncRepeatProfileControls() {
+    const inf = document.getElementById('gridMode').value === 'infinite';
+    const rep = document.getElementById('repeatProfile').checked;
+    const upInp = document.getElementById('repeatProfileUpstream');
+    upInp.disabled = !inf || !rep;
+    if (upInp.disabled) {
+      upInp.checked = false;
+      app.repeatProfileUpstream = false;
+    }
+  }
+
+  document.getElementById('gridMode').addEventListener('change', e => {
+    app.infiniteGrid = e.target.value === 'infinite';
+    syncRepeatProfileControls();
+    draw();
+  });
+  document.getElementById('repeatProfile').addEventListener('change', e => {
+    app.repeatProfile = e.target.checked;
+    syncRepeatProfileControls();
+    draw();
+  });
+  document.getElementById('repeatProfileUpstream').addEventListener('change', e => { app.repeatProfileUpstream = e.target.checked; draw(); });
+  document.getElementById('masterRollover').addEventListener('change', e => { app.masterAxisRollover = e.target.checked; draw(); });
+  document.getElementById('slaveRollover').addEventListener('change', e => { app.slaveAxisRollover = e.target.checked; draw(); });
+
+  syncRepeatProfileControls();
 
   window.addEventListener('resize', resize);
 }

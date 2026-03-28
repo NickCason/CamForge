@@ -63,9 +63,26 @@ export const app = {
   redoStack: [],
   mouseCanvasX: 0,
   mouseCanvasY: 0,
-  snapEnabled: true,
+  snapToGrid: true,
+  snapToPathNodes: true,
+  snapToPathCurve: true,
+  snapActivePathOnly: false,
+  shiftDown: false,
+  lastSnapKind: 'none',
+  lastSnapX: 0,
+  lastSnapY: 0,
   isDark: true,
   editingCallout: null,
+
+  leftPanelOpen: true,
+  rightPanelOpen: true,
+
+  infiniteGrid: false,
+  repeatProfile: false,
+  /** When repeat profile is on, also tile copies for negative X (left of base range). */
+  repeatProfileUpstream: false,
+  masterAxisRollover: false,
+  slaveAxisRollover: false,
 };
 
 export function getPath(pathId) {

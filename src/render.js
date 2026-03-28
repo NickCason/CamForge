@@ -1,6 +1,7 @@
 import { app } from './state.js';
 import { MARGIN } from './constants.js';
-import { g2c, c2g, maySnap, cssVar, c2gFromLogical, canvasLogicalToScreen } from './coords.js';
+import { g2c, c2g, cssVar, c2gFromLogical, canvasLogicalToScreen, visibleGraphRange } from './coords.js';
+import { resolveSnap } from './snapEngine.js';
 import { sortedPoints, sampleSpline } from './spline.js';
 import {
   computeIntersections,
@@ -33,7 +34,7 @@ export function draw() {
   ctx.save();
   ctx.translate(panX * zoom - panX + (W / dpr) * (1 - zoom) / 2, panY * zoom - panY + (H / dpr) * (1 - zoom) / 2);
   ctx.scale(zoom, zoom);
-  drawGrid(); drawAxes(); drawRefLines(); drawSplines(); drawIntersects(); drawPoints(); drawObjects(); drawPreview();
+  drawGrid(); drawAxes(); drawRefLines(); drawSplines(); drawIntersects(); drawPoints(); drawObjects(); drawPreview(); drawSnapReticle();
   ctx.restore();
 }
 
@@ -42,7 +43,7 @@ function drawPreview() {
   if (app.activeTool !== 'line' && app.activeTool !== 'dimension') return;
   const ctx = app.ctx;
   const gp = c2g(app.mouseCanvasX, app.mouseCanvasY);
-  const s = maySnap(gp.x, gp.y, false);
+  const s = resolveSnap(gp.x, gp.y, { shiftKey: app.shiftDown });
   const p1 = g2c(app.lineStart.x, app.lineStart.y);
   const p2 = g2c(s.x, s.y);
   const col = app.activeTool === 'line' ? cssVar('--accent-red') : cssVar('--accent-orange');
@@ -62,21 +63,61 @@ function drawPreview() {
   }
 }
 
+function drawSnapReticle() {
+  if (app.lastSnapKind === 'none' || app.lastSnapKind === 'grid') return;
+  const p = g2c(app.lastSnapX, app.lastSnapY);
+  const ctx = app.ctx;
+  const r = 8;
+  const col = app.lastSnapKind === 'node' ? cssVar('--accent-cyan') : cssVar('--accent-green');
+  ctx.save();
+  ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(p.x - r, p.y); ctx.lineTo(p.x + r, p.y);
+  ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x, p.y + r);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r + 1, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawGrid() {
   const { ctx, W, H, dpr } = app;
   const { graphRange, gridStep } = app;
   const pL = MARGIN.left, pR = W / dpr - MARGIN.right, pT = MARGIN.top, pB = H / dpr - MARGIN.bottom;
   const pw = pR - pL, ph = pB - pT, xR = graphRange.xMax - graphRange.xMin, yR = graphRange.yMax - graphRange.yMin;
   const minor = cssVar('--grid-minor'), major = cssVar('--grid-major');
-  for (let v = Math.ceil(graphRange.xMin / gridStep.x) * gridStep.x; v <= graphRange.xMax; v += gridStep.x) {
-    const x = pL + ((v - graphRange.xMin) / xR) * pw, maj = v % (gridStep.x * 4) === 0 || v === 0;
-    ctx.strokeStyle = maj ? major : minor; ctx.lineWidth = maj ? 0.8 : 0.5;
-    ctx.beginPath(); ctx.moveTo(x, pT); ctx.lineTo(x, pB); ctx.stroke();
+
+  let xLo = graphRange.xMin, xHi = graphRange.xMax;
+  let yLo = graphRange.yMin, yHi = graphRange.yMax;
+  let drawTop = pT, drawBot = pB, drawLeft = pL, drawRight = pR;
+
+  if (app.infiniteGrid) {
+    const vis = visibleGraphRange();
+    xLo = vis.xMin; xHi = vis.xMax;
+    yLo = vis.yMin; yHi = vis.yMax;
+    drawTop = -1e4; drawBot = 1e4; drawLeft = -1e4; drawRight = 1e4;
   }
-  for (let v = Math.ceil(graphRange.yMin / gridStep.y) * gridStep.y; v <= graphRange.yMax; v += gridStep.y) {
-    const y = pB - ((v - graphRange.yMin) / yR) * ph, maj = v % (gridStep.y * 4) === 0 || v === 0;
+
+  for (let v = Math.ceil(xLo / gridStep.x) * gridStep.x; v <= xHi; v += gridStep.x) {
+    const x = pL + ((v - graphRange.xMin) / xR) * pw;
+    const maj = v % (gridStep.x * 4) === 0 || v === 0;
     ctx.strokeStyle = maj ? major : minor; ctx.lineWidth = maj ? 0.8 : 0.5;
-    ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pR, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, drawTop); ctx.lineTo(x, drawBot); ctx.stroke();
+  }
+  for (let v = Math.ceil(yLo / gridStep.y) * gridStep.y; v <= yHi; v += gridStep.y) {
+    const y = pB - ((v - graphRange.yMin) / yR) * ph;
+    const maj = v % (gridStep.y * 4) === 0 || v === 0;
+    ctx.strokeStyle = maj ? major : minor; ctx.lineWidth = maj ? 0.8 : 0.5;
+    ctx.beginPath(); ctx.moveTo(drawLeft, y); ctx.lineTo(drawRight, y); ctx.stroke();
+  }
+
+  if (app.infiniteGrid) {
+    const rangeCol = cssVar('--axis-color');
+    ctx.save();
+    ctx.strokeStyle = rangeCol; ctx.lineWidth = 1; ctx.setLineDash([6, 4]); ctx.globalAlpha = 0.5;
+    ctx.strokeRect(pL, pT, pw, ph);
+    ctx.restore();
   }
 }
 
@@ -86,19 +127,42 @@ function drawAxes() {
   const pL = MARGIN.left, pR = W / dpr - MARGIN.right, pT = MARGIN.top, pB = H / dpr - MARGIN.bottom;
   const pw = pR - pL, ph = pB - pT, xR = graphRange.xMax - graphRange.xMin, yR = graphRange.yMax - graphRange.yMin;
   const axCol = cssVar('--axis-color'), tickCol = cssVar('--axis-tick'), titleCol = cssVar('--axis-title');
+  const cycleX = xR, cycleY = yR;
+
   ctx.strokeStyle = axCol; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pB); ctx.lineTo(pR, pB); ctx.stroke();
+
+  let xLo = graphRange.xMin, xHi = graphRange.xMax;
+  let yLo = graphRange.yMin, yHi = graphRange.yMax;
+  if (app.infiniteGrid) {
+    const vis = visibleGraphRange();
+    xLo = vis.xMin; xHi = vis.xMax;
+    yLo = vis.yMin; yHi = vis.yMax;
+  }
+
   ctx.fillStyle = tickCol; ctx.font = '12px "JetBrains Mono",monospace';
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  for (let v = Math.ceil(graphRange.xMin / gridStep.x) * gridStep.x; v <= graphRange.xMax; v += gridStep.x) {
+  for (let v = Math.ceil(xLo / gridStep.x) * gridStep.x; v <= xHi; v += gridStep.x) {
     const x = pL + ((v - graphRange.xMin) / xR) * pw;
-    ctx.fillText(v + '', x, pB + 6);
+    let lbl = v;
+    if (app.masterAxisRollover && cycleX > 0) {
+      lbl = ((v - graphRange.xMin) % cycleX + cycleX) % cycleX + graphRange.xMin;
+      lbl = +lbl.toFixed(6);
+    }
+    ctx.fillStyle = tickCol;
+    ctx.fillText(lbl + '', x, pB + 6);
     ctx.beginPath(); ctx.moveTo(x, pB); ctx.lineTo(x, pB + 4); ctx.strokeStyle = axCol; ctx.lineWidth = 1; ctx.stroke();
   }
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  for (let v = Math.ceil(graphRange.yMin / gridStep.y) * gridStep.y; v <= graphRange.yMax; v += gridStep.y) {
+  for (let v = Math.ceil(yLo / gridStep.y) * gridStep.y; v <= yHi; v += gridStep.y) {
     const y = pB - ((v - graphRange.yMin) / yR) * ph;
-    ctx.fillText(v + '', pL - 8, y);
+    let lbl = v;
+    if (app.slaveAxisRollover && cycleY > 0) {
+      lbl = ((v - graphRange.yMin) % cycleY + cycleY) % cycleY + graphRange.yMin;
+      lbl = +lbl.toFixed(6);
+    }
+    ctx.fillStyle = tickCol;
+    ctx.fillText(lbl + '', pL - 8, y);
     ctx.beginPath(); ctx.moveTo(pL - 4, y); ctx.lineTo(pL, y); ctx.strokeStyle = axCol; ctx.lineWidth = 1; ctx.stroke();
   }
   ctx.fillStyle = titleCol; ctx.font = '13px "IBM Plex Sans",sans-serif';
@@ -112,12 +176,17 @@ function drawRefLines() {
   const { ctx, W, H, dpr, objects } = app;
   const pL = MARGIN.left, pR = W / dpr - MARGIN.right, pT = MARGIN.top, pB = H / dpr - MARGIN.bottom;
   const defH = cssVar('--ref-hline'), defV = cssVar('--ref-vline');
+  const drawLeft = app.infiniteGrid ? -1e4 : pL;
+  const drawRight = app.infiniteGrid ? 1e4 : pR;
+  const drawTop = app.infiniteGrid ? -1e4 : pT;
+  const drawBot = app.infiniteGrid ? 1e4 : pB;
+  const vOffsets = repeatOffsets();
   objects.forEach(o => {
     if (o.hidden) return;
     if (o.type === 'hline') {
       const p = g2c(0, o.value); const col = o.color || defH;
       ctx.setLineDash([6, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(pL, p.y); ctx.lineTo(pR, p.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(drawLeft, p.y); ctx.lineTo(drawRight, p.y); ctx.stroke(); ctx.setLineDash([]);
       const pos = o.labelPos !== undefined ? o.labelPos : 1.0;
       const side = o.labelSide || 'above';
       const lx = pL + pos * (pR - pL);
@@ -129,33 +198,62 @@ function drawRefLines() {
       ctx.fillText(lbl, pos > 0.5 ? lx - 4 : lx + 4, p.y + yOff);
     }
     if (o.type === 'vline') {
-      const p = g2c(o.value, 0); const col = o.color || defV;
-      ctx.setLineDash([6, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(p.x, pT); ctx.lineTo(p.x, pB); ctx.stroke(); ctx.setLineDash([]);
-      const pos = o.labelPos !== undefined ? o.labelPos : 0.0;
-      const side = o.labelSide || 'right';
-      const ly = pT + pos * (pB - pT);
-      ctx.fillStyle = col; ctx.font = '12px "JetBrains Mono",monospace';
-      ctx.textAlign = side === 'right' ? 'left' : 'right';
-      ctx.textBaseline = pos < 0.5 ? 'top' : 'bottom';
-      const lbl = (o.label ? o.label + ' ' : '') + o.value.toFixed(1);
-      const xOff = side === 'right' ? 4 : -4;
-      ctx.fillText(lbl, p.x + xOff, ly + 4);
+      vOffsets.forEach(off => {
+        const isPrimary = off === 0;
+        const p = g2c(o.value + off, 0); const col = o.color || defV;
+        ctx.save();
+        if (!isPrimary) ctx.globalAlpha = 0.35;
+        ctx.setLineDash([6, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p.x, drawTop); ctx.lineTo(p.x, drawBot); ctx.stroke(); ctx.setLineDash([]);
+        if (isPrimary) {
+          const pos = o.labelPos !== undefined ? o.labelPos : 0.0;
+          const side = o.labelSide || 'right';
+          const ly = pT + pos * (pB - pT);
+          ctx.fillStyle = col; ctx.font = '12px "JetBrains Mono",monospace';
+          ctx.textAlign = side === 'right' ? 'left' : 'right';
+          ctx.textBaseline = pos < 0.5 ? 'top' : 'bottom';
+          const lbl = (o.label ? o.label + ' ' : '') + o.value.toFixed(1);
+          const xOff = side === 'right' ? 4 : -4;
+          ctx.fillText(lbl, p.x + xOff, ly + 4);
+        }
+        ctx.restore();
+      });
     }
   });
 }
 
+function repeatOffsets() {
+  if (!app.repeatProfile || !app.infiniteGrid) return [0];
+  const cycle = app.graphRange.xMax - app.graphRange.xMin;
+  if (cycle <= 0) return [0];
+  const vis = visibleGraphRange();
+  const offsets = [];
+  let lo = Math.floor((vis.xMin - app.graphRange.xMax) / cycle);
+  const hi = Math.ceil((vis.xMax - app.graphRange.xMin) / cycle);
+  if (!app.repeatProfileUpstream) lo = Math.max(0, lo);
+  for (let n = lo; n <= hi; n++) offsets.push(n * cycle);
+  return offsets;
+}
+
 function drawSplines() {
   const { ctx, W, H, dpr, graphRange } = app;
+  const offsets = repeatOffsets();
   app.paths.forEach(path => {
     if (path.points.length < 2) return;
     const samples = sampleSpline(path, 50);
     if (samples.length < 2) return;
-    ctx.strokeStyle = path.color; ctx.lineWidth = path.width;
-    ctx.beginPath();
-    const s0 = g2c(samples[0].x, samples[0].y); ctx.moveTo(s0.x, s0.y);
-    for (let i = 1; i < samples.length; i++) { const s = g2c(samples[i].x, samples[i].y); ctx.lineTo(s.x, s.y); }
-    ctx.stroke();
+
+    offsets.forEach(off => {
+      const isPrimary = off === 0;
+      ctx.save();
+      if (!isPrimary) ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = path.color; ctx.lineWidth = path.width;
+      ctx.beginPath();
+      const s0 = g2c(samples[0].x + off, samples[0].y); ctx.moveTo(s0.x, s0.y);
+      for (let i = 1; i < samples.length; i++) { const s = g2c(samples[i].x + off, samples[i].y); ctx.lineTo(s.x, s.y); }
+      ctx.stroke();
+      ctx.restore();
+    });
 
     const pts = sortedPoints(path.points);
     if (pts.length >= 2) {
@@ -180,22 +278,29 @@ function drawSplines() {
 function drawPoints() {
   const { ctx, H, dpr, selectedPoint } = app;
   const selCol = cssVar('--point-selected'), bgCol = cssVar('--bg-deep');
+  const offsets = repeatOffsets();
   app.paths.forEach(path => {
     path.points.forEach((pt, i) => {
-      const p = g2c(pt.x, pt.y);
-      const sel = selectedPoint && selectedPoint.pathId === path.id && selectedPoint.pointIndex === i;
-      const r = sel ? 7 : 5;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = sel ? selCol : path.color; ctx.fill();
-      ctx.strokeStyle = bgCol; ctx.lineWidth = 2; ctx.stroke();
-      if (sel) {
-        ctx.setLineDash([3, 3]); ctx.strokeStyle = cssVar('--point-selected-dim'); ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, H / dpr - MARGIN.bottom);
-        ctx.moveTo(p.x, p.y); ctx.lineTo(MARGIN.left, p.y); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = selCol; ctx.font = '12px "JetBrains Mono",monospace';
-        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-        ctx.fillText(`(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`, p.x + 10, p.y - 6);
-      }
+      offsets.forEach(off => {
+        const isPrimary = off === 0;
+        const p = g2c(pt.x + off, pt.y);
+        const sel = isPrimary && selectedPoint && selectedPoint.pathId === path.id && selectedPoint.pointIndex === i;
+        const r = sel ? 7 : 5;
+        ctx.save();
+        if (!isPrimary) ctx.globalAlpha = 0.35;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = sel ? selCol : path.color; ctx.fill();
+        ctx.strokeStyle = bgCol; ctx.lineWidth = 2; ctx.stroke();
+        ctx.restore();
+        if (sel) {
+          ctx.setLineDash([3, 3]); ctx.strokeStyle = cssVar('--point-selected-dim'); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, H / dpr - MARGIN.bottom);
+          ctx.moveTo(p.x, p.y); ctx.lineTo(MARGIN.left, p.y); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = selCol; ctx.font = '12px "JetBrains Mono",monospace';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+          ctx.fillText(`(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`, p.x + 10, p.y - 6);
+        }
+      });
     });
   });
 }

@@ -39,13 +39,14 @@ export function canvasLogicalToScreen(lx, ly) {
   return { x: lx * app.zoom + offX, y: ly * app.zoom + offY };
 }
 
-export function snap(gx, gy) {
+export function visibleGraphRange() {
+  const tl = c2g(0, 0);
+  const br = c2g(app.W / app.dpr, app.H / app.dpr);
   return {
-    x: Math.round(gx / app.gridStep.x) * app.gridStep.x,
-    y: Math.round(gy / app.gridStep.y) * app.gridStep.y
+    xMin: Math.min(tl.x, br.x),
+    xMax: Math.max(tl.x, br.x),
+    yMin: Math.min(tl.y, br.y),
+    yMax: Math.max(tl.y, br.y)
   };
 }
 
-export function maySnap(gx, gy, forceOff) {
-  return (app.snapEnabled && !forceOff) ? snap(gx, gy) : { x: gx, y: gy };
-}
