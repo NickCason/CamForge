@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cam Profile Designer</title>
-  <script type="module" crossorigin src="/CamForge/assets/index-DA45oNpd.js"></script>
-  <link rel="stylesheet" crossorigin href="/CamForge/assets/index-CcwE4VsW.css">
+  <script type="module" crossorigin src="/CamForge/assets/index-DghX5DAr.js"></script>
+  <link rel="stylesheet" crossorigin href="/CamForge/assets/index-CjxJ0yb6.css">
 </head>
 <body>
 <div class="app-layout">
@@ -45,7 +45,7 @@
       <button id="btnUndo">↶ Undo</button>
       <button id="btnRedo">↷ Redo</button>
       <button id="btnClear">Clear All</button>
-      <button id="btnExport">Export SVG</button>
+      <button id="btnExport">Export\u2026</button>
       <button id="btnToggleRight" title="Toggle right panel (])">◨</button>
     </div>
   </div>
@@ -90,6 +90,44 @@
         <div class="btn-row">
           <button id="btnCancelCallout">Cancel</button>
           <button class="primary" id="btnConfirmCallout">Add</button>
+        </div>
+      </div>
+    </div>
+    <div class="export-overlay" id="exportOverlay">
+      <div class="export-modal">
+        <h4>Export</h4>
+        <div class="export-row">
+          <span class="export-label">Format</span>
+          <select id="exportFormat">
+            <option value="svg">SVG</option>
+            <option value="png" selected>PNG</option>
+            <option value="pdf">PDF</option>
+          </select>
+        </div>
+        <div class="export-row">
+          <label class="snap-check"><input type="checkbox" id="exportStats"> Include statistics</label>
+        </div>
+        <div class="export-row" id="exportTransparentRow">
+          <label class="snap-check"><input type="checkbox" id="exportTransparent"> Transparent background</label>
+        </div>
+        <div class="export-row" id="exportPdfModeRow" style="display:none">
+          <span class="export-label">PDF</span>
+          <select id="exportPdfMode">
+            <option value="vector" selected>Vector</option>
+            <option value="raster">Raster</option>
+          </select>
+        </div>
+        <div class="export-row">
+          <span class="export-label">Scale</span>
+          <select id="exportScale">
+            <option value="1">1\u00d7</option>
+            <option value="2" selected>2\u00d7</option>
+            <option value="4">4\u00d7</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button id="btnCancelExport">Cancel</button>
+          <button class="primary" id="btnConfirmExport">Export</button>
         </div>
       </div>
     </div>
