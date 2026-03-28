@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cam Profile Designer</title>
+</head>
+<body>
+<div class="app-layout">
+  <div class="top-bar">
+    <div class="logo">CAM<span>FORGE</span></div>
+    <div class="toolbar" id="mainToolbar">
+      <button id="tool-select" class="active" title="Select & Move (V)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>Select
+      </button>
+      <button id="tool-point" title="Add Point (P)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>Point
+      </button>
+      <button id="tool-line" title="Indicator Line (L)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/></svg>Line
+      </button>
+      <button id="tool-hline" title="H-Ref (H)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>H-Ref
+      </button>
+      <button id="tool-vline" title="V-Ref (G)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="3" x2="12" y2="21"/></svg>V-Ref
+      </button>
+      <div class="toolbar-sep"></div>
+      <button id="tool-callout" title="Text Callout (T)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21l4-4 4 4"/></svg>Callout
+      </button>
+      <button id="tool-dimension" title="Dimension (D)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="8" x2="4" y2="16"/><line x1="20" y1="8" x2="20" y2="16"/></svg>Dim
+      </button>
+      <div class="toolbar-sep"></div>
+      <button id="tool-intersect" class="active" title="Intersections (I)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg>Intersects
+      </button>
+      <input type="color" id="intersectColor" value="#34d399" title="Intersect marker color" style="width:22px;height:22px;border:1px solid var(--border);border-radius:3px;cursor:pointer;padding:0;background:none;margin-left:-2px;">
+    </div>
+    <div class="top-actions">
+      <button id="btnTheme" title="Toggle light/dark mode">☀ Light</button>
+      <button id="btnUndo">↶ Undo</button>
+      <button id="btnRedo">↷ Redo</button>
+      <button id="btnClear">Clear All</button>
+      <button id="btnExport">Export SVG</button>
+    </div>
+  </div>
+
+  <div class="left-panel">
+    <div class="panel-section flex-grow">
+      <div class="panel-section-title">Spline Points <span class="count" id="pointCount">0 pts</span></div>
+      <div class="slope-row" id="startSlopeRow">
+        <span class="slope-label">Start dy/dx</span>
+        <input type="number" id="startSlope" value="0" step="0.1">
+        <span class="slope-hint">entry slope</span>
+      </div>
+      <div class="point-table-header"><span>#</span><span>X</span><span>Y</span><span>Segment</span><span></span></div>
+      <div class="point-list" id="pointList"></div>
+      <div class="slope-row" id="endSlopeRow" style="margin-top:6px;">
+        <span class="slope-label">End dy/dx</span>
+        <input type="number" id="endSlope" value="0" step="0.1">
+        <span class="slope-hint">exit slope</span>
+      </div>
+      <div class="add-point-row">
+        <input type="text" id="addX" placeholder="X">
+        <input type="text" id="addY" placeholder="Y">
+        <button id="btnAddPoint">+</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Objects <span class="count" id="objCount">0</span></div>
+      <div class="object-list" id="objectList"></div>
+    </div>
+    <div class="shortcuts-panel">
+      <div class="shortcuts-grid">
+        <span><kbd>V</kbd> Select</span><span><kbd>P</kbd> Point</span>
+        <span><kbd>L</kbd> Line</span><span><kbd>H</kbd> H-Ref</span>
+        <span><kbd>G</kbd> V-Ref</span><span><kbd>T</kbd> Callout</span>
+        <span><kbd>D</kbd> Dim</span><span><kbd>I</kbd> Intersects</span>
+        <span><kbd>Del</kbd> Delete</span><span><kbd>S</kbd> Snap</span>
+        <span><kbd>Space</kbd> Pan</span><span><kbd>Shift</kbd> No-snap</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="canvas-container" id="canvasContainer">
+    <canvas id="mainCanvas"></canvas>
+    <div class="cursor-readout" id="cursorReadout">X: <span>0.000</span> &nbsp; Y: <span>0.000</span></div>
+    <div class="canvas-overlay">
+      <div class="zoom-controls">
+        <button id="zoomOut">−</button>
+        <div class="zoom-label" id="zoomLabel">100%</div>
+        <button id="zoomIn">+</button>
+        <button id="zoomFit" title="Fit to view">⊡</button>
+      </div>
+    </div>
+    <div class="callout-input-overlay" id="calloutOverlay">
+      <div class="callout-input-box">
+        <h4>Add Callout</h4>
+        <input type="text" id="calloutText" placeholder="Enter label text...">
+        <div class="btn-row">
+          <button id="btnCancelCallout">Cancel</button>
+          <button class="primary" id="btnConfirmCallout">Add</button>
+        </div>
+      </div>
+    </div>
+    <div class="context-menu" id="contextMenu">
+      <button data-action="delete">Delete</button>
+      <button data-action="duplicate">Duplicate</button>
+      <div class="sep"></div>
+      <button data-action="toFront">Bring to Front</button>
+      <button data-action="toBack">Send to Back</button>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="prop-group">
+      <label>Graph Range</label>
+      <div class="prop-row"><span class="prop-label">X Min</span><input type="number" id="xMin" value="0" step="10"></div>
+      <div class="prop-row"><span class="prop-label">X Max</span><input type="number" id="xMax" value="360" step="10"></div>
+      <div class="prop-row"><span class="prop-label">Y Min</span><input type="number" id="yMin" value="0" step="10"></div>
+      <div class="prop-row"><span class="prop-label">Y Max</span><input type="number" id="yMax" value="100" step="10"></div>
+      <div class="prop-row"><span class="prop-label">X Grid</span><input type="number" id="xGrid" value="20" step="5" min="1"></div>
+      <div class="prop-row"><span class="prop-label">Y Grid</span><input type="number" id="yGrid" value="5" step="5" min="1"></div>
+    </div>
+    <div class="prop-group">
+      <label>Axis Labels</label>
+      <div class="prop-row"><span class="prop-label">X Axis</span><input type="text" id="xLabel" value="Degrees (°)"></div>
+      <div class="prop-row"><span class="prop-label">Y Axis</span><input type="text" id="yLabel" value="Displacement (mm)"></div>
+    </div>
+    <div class="prop-group">
+      <label>Spline Display</label>
+      <div class="prop-row">
+        <span class="prop-label">Color</span>
+        <input type="color" class="color-swatch" id="splineColor" value="#4a90d9">
+        <input type="number" id="splineWidth" value="2" min="1" max="8" step="0.5" style="width:50px">
+        <span style="font-size:10px;color:var(--text-dim)">px</span>
+      </div>
+    </div>
+    <div class="prop-group" id="selectionProps" style="display:none;">
+      <label>Selection Properties</label>
+      <div id="selPropsContent"></div>
+    </div>
+    <div class="prop-group">
+      <label>Axis Intersections</label>
+      <div class="intersect-list" id="intersectList">
+        <div style="font-size:10px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;">Toggle "Intersects" to compute</div>
+      </div>
+    </div>
+    <div class="prop-group" id="pathMeasureSection" style="display:none;">
+      <label>Path Lengths Between Intersects</label>
+      <div class="intersect-list" id="pathMeasureList"></div>
+    </div>
+    <div class="prop-group">
+      <label>Spline Analytics</label>
+      <div id="analyticsContent" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);line-height:1.9;">Add points to see analytics</div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item"><div class="status-dot"></div> Ready</div>
+    <div class="status-item" id="statusPoints">Points: 0</div>
+    <div class="status-item" id="statusObjects">Objects: 0</div>
+    <div class="status-item" id="statusTool">Tool: Select</div>
+    <div style="flex:1"></div>
+    <div class="status-item" id="statusSnap" style="cursor:pointer" title="Toggle grid snap (S)">Snap: Grid</div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
