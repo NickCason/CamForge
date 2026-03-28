@@ -5,6 +5,8 @@ import { hitPt, hitObj, hitIntersectLabel, hitIntersectMarker } from '../hitTest
 import { undo, redo } from '../history.js';
 import { refreshPathPanels, refreshObjectList, showSelProps, showIntersectionProps, updateAnalytics, refreshAll, addNewPath } from './panels.js';
 import { exportSvg } from './exportSvg.js';
+import { exportPng } from '../export/rasterExport.js';
+import { exportPdf } from '../export/pdfExport.js';
 import { resolveSnap } from '../snapEngine.js';
 
 function setPanelState(side, open) {
@@ -474,7 +476,32 @@ export function initEvents() {
     document.getElementById('selectionProps').style.display = 'none';
     refreshAll();
   });
-  document.getElementById('btnExport').addEventListener('click', exportSvg);
+  document.getElementById('btnExport').addEventListener('click', () => {
+    document.getElementById('exportOverlay').classList.add('show');
+  });
+  document.getElementById('btnCancelExport').addEventListener('click', () => {
+    document.getElementById('exportOverlay').classList.remove('show');
+  });
+  document.getElementById('exportFormat').addEventListener('change', e => {
+    const isPdf = e.target.value === 'pdf';
+    document.getElementById('exportTransparentRow').style.display = isPdf ? 'none' : '';
+    document.getElementById('exportPdfModeRow').style.display = isPdf ? '' : 'none';
+  });
+  document.getElementById('btnConfirmExport').addEventListener('click', () => {
+    const fmt = document.getElementById('exportFormat').value;
+    const includeStats = document.getElementById('exportStats').checked;
+    const transparent = document.getElementById('exportTransparent').checked;
+    const scale = parseInt(document.getElementById('exportScale').value, 10);
+    document.getElementById('exportOverlay').classList.remove('show');
+    if (fmt === 'svg') {
+      exportSvg({ transparent, includeStats, scale });
+    } else if (fmt === 'png') {
+      exportPng({ transparent, includeStats, scale });
+    } else if (fmt === 'pdf') {
+      const vector = document.getElementById('exportPdfMode').value === 'vector';
+      exportPdf({ includeStats, scale, vector });
+    }
+  });
   document.getElementById('btnAddPath').addEventListener('click', addNewPath);
 
   document.getElementById('btnToggleLeft').addEventListener('click', toggleLeftPanel);

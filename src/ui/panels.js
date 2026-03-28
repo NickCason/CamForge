@@ -2,6 +2,7 @@ import { app, saveState, getPath, activePath } from '../state.js';
 import { cssVar } from '../coords.js';
 import { sortedPoints, sampleSpline } from '../spline.js';
 import { draw } from '../render.js';
+import { computePathAnalytics } from '../export/sceneData.js';
 import { findIntersectionByKey, defaultCalloutMode, effectiveCalloutMode } from '../intersectLabels.js';
 
 const PATH_COLORS = ['#4a90d9', '#f59e0b', '#34d399', '#ef4444', '#a78bfa', '#22d3ee', '#ec4899', '#84cc16'];
@@ -420,13 +421,10 @@ export function updateAnalytics() {
   const el = document.getElementById('analyticsContent');
   const path = activePath();
   if (!path || path.points.length < 2) { el.innerHTML = 'Add points to see analytics'; return; }
-  const s = sortedPoints(path.points), xR = s[s.length - 1].x - s[0].x, ys = s.map(p => p.y);
-  const yMn = Math.min(...ys), yMx = Math.max(...ys), yR = yMx - yMn;
-  const samples = sampleSpline(path, 60); let maxV = 0, maxA = 0; const vels = [];
-  for (let i = 1; i < samples.length; i++) { const dx = samples[i].x - samples[i - 1].x; if (dx === 0) continue; const v = (samples[i].y - samples[i - 1].y) / dx; vels.push(v); maxV = Math.max(maxV, Math.abs(v)); }
-  for (let i = 1; i < vels.length; i++) maxA = Math.max(maxA, Math.abs(vels[i] - vels[i - 1]));
+  const a = computePathAnalytics(path);
+  if (!a) { el.innerHTML = 'Add points to see analytics'; return; }
   const pathIdx = app.paths.indexOf(path) + 1;
-  el.innerHTML = `<span style="color:${path.color}">Path ${pathIdx}</span> (${path.points.length} pts)<br>X: ${s[0].x.toFixed(1)} \u2192 ${s[s.length - 1].x.toFixed(1)} (\u0394${xR.toFixed(1)})<br>Y: ${yMn.toFixed(1)} \u2192 ${yMx.toFixed(1)} (\u0394${yR.toFixed(1)})<br>Max |vel|: ${maxV.toFixed(4)}<br>Max |acc|: ${maxA.toFixed(4)}<br>Stroke: ${yR.toFixed(2)}`;
+  el.innerHTML = `<span style="color:${path.color}">Path ${pathIdx}</span> (${a.pointCount} pts)<br>X: ${a.xMin.toFixed(1)} \u2192 ${a.xMax.toFixed(1)} (\u0394${a.xRange.toFixed(1)})<br>Y: ${a.yMin.toFixed(1)} \u2192 ${a.yMax.toFixed(1)} (\u0394${a.yRange.toFixed(1)})<br>Max |vel|: ${a.maxVelocity.toFixed(4)}<br>Max |acc|: ${a.maxAcceleration.toFixed(4)}<br>Stroke: ${a.stroke.toFixed(2)}`;
 }
 
 export function refreshAll() {

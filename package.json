@@ -3,12 +3,16 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://YOUR_USERNAME.github.io/CamForge/",
+  "homepage": "https://NickCason.github.io/CamForge/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1",
+    "svg2pdf.js": "^2.7.0"
   },
   "devDependencies": {
     "gh-pages": "^6.3.0",
