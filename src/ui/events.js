@@ -1,6 +1,7 @@
 import { app, saveState, getPath, activePath } from '../state.js';
 import { c2g, cssVar } from '../coords.js';
 import { draw, resize } from '../render.js';
+import { setPalette, toggleColorMode } from '../themes/applyTheme.js';
 import { hitPt, hitObj, hitIntersectLabel, hitIntersectMarker } from '../hitTest.js';
 import { undo, redo } from '../history.js';
 import { refreshPathPanels, refreshObjectList, showSelProps, showIntersectionProps, updateAnalytics, refreshAll, addNewPath } from './panels.js';
@@ -87,14 +88,7 @@ function pointerSnap(gx, gy, shiftKey, excludePathId, excludePointIndex, snapOpt
 }
 
 function toggleTheme() {
-  app.isDark = !app.isDark;
-  if (app.isDark) {
-    document.documentElement.removeAttribute('data-theme');
-  } else {
-    document.documentElement.setAttribute('data-theme', 'light');
-  }
-  document.getElementById('btnTheme').textContent = app.isDark ? '\u2600 Light' : '\u263E Dark';
-  draw();
+  toggleColorMode(draw);
 }
 
 function confirmCallout() {
@@ -104,7 +98,15 @@ function confirmCallout() {
     app.editingCallout = null;
   } else if (t && app.calloutPos) {
     saveState();
-    app.objects.push({ type: 'callout', id: app.nextId++, x: app.calloutPos.x, y: app.calloutPos.y + 15, text: t, anchorX: app.calloutPos.x, anchorY: app.calloutPos.y, textColor: cssVar('--callout-text'), bgColor: cssVar('--bg-surface'), borderColor: cssVar('--callout-border') });
+    app.objects.push({
+      type: 'callout',
+      id: app.nextId++,
+      x: app.calloutPos.x,
+      y: app.calloutPos.y + 15,
+      text: t,
+      anchorX: app.calloutPos.x,
+      anchorY: app.calloutPos.y,
+    });
     refreshObjectList(); draw();
   }
   document.getElementById('calloutOverlay').classList.remove('show');
@@ -453,6 +455,9 @@ export function initEvents() {
   document.getElementById('zoomFit').addEventListener('click', () => { app.zoom = 1; app.panX = 0; app.panY = 0; document.getElementById('zoomLabel').textContent = '100%'; draw(); });
 
   document.getElementById('btnTheme').addEventListener('click', toggleTheme);
+  document.getElementById('paletteSelect').addEventListener('change', e => {
+    setPalette(e.target.value, draw);
+  });
   document.getElementById('btnUndo').addEventListener('click', undo);
   document.getElementById('btnRedo').addEventListener('click', redo);
   document.getElementById('btnClear').addEventListener('click', () => {

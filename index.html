@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cam Profile Designer</title>
+<script>
+(function () {
+  var IDS = ['forge', 'oxide', 'blueprint', 'dro', 'telemetry', 'monolith', 'theme-axiom', 'theme-strata', 'theme-flux', 'theme-catalyst', 'theme-zenith'];
+  var P = 'camforge-palette';
+  var T = 'camforge-theme';
+  try {
+    var pal = localStorage.getItem(P) || 'forge';
+    var th = localStorage.getItem(T) || 'dark';
+    if (IDS.indexOf(pal) < 0) pal = 'forge';
+    if (th !== 'light') th = 'dark';
+    document.documentElement.setAttribute('data-palette', pal);
+    document.documentElement.setAttribute('data-theme', th);
+  } catch (e) {
+    document.documentElement.setAttribute('data-palette', 'forge');
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 </head>
 <body>
 <div class="app-layout">
@@ -39,7 +57,8 @@
     </div>
     <div class="top-actions">
       <button id="btnToggleLeft" title="Toggle left panel ([)">◧</button>
-      <button id="btnTheme" title="Toggle light/dark mode">☀ Light</button>
+      <select id="paletteSelect" title="Color palette" aria-label="Color palette"></select>
+      <button id="btnTheme" title="Switch to light mode">☀ Light</button>
       <button id="btnUndo">↶ Undo</button>
       <button id="btnRedo">↷ Redo</button>
       <button id="btnClear">Clear All</button>

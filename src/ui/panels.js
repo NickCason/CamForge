@@ -1,16 +1,19 @@
 import { app, saveState, getPath, activePath } from '../state.js';
-import { cssVar } from '../coords.js';
+import { cssVar, colorForTypeColorInput } from '../coords.js';
 import { sortedPoints, sampleSpline } from '../spline.js';
 import { draw } from '../render.js';
 import { computePathAnalytics } from '../export/sceneData.js';
 import { findIntersectionByKey, defaultCalloutMode, effectiveCalloutMode } from '../intersectLabels.js';
 
-const PATH_COLORS = ['#4a90d9', '#f59e0b', '#34d399', '#ef4444', '#a78bfa', '#22d3ee', '#ec4899', '#84cc16'];
+function pathColorsFromTheme() {
+  return [1, 2, 3, 4, 5, 6, 7, 8].map(n => cssVar(`--path-${n}`));
+}
 
 function nextPathColor() {
+  const palette = pathColorsFromTheme();
   const used = new Set(app.paths.map(p => p.color));
-  for (const c of PATH_COLORS) if (!used.has(c)) return c;
-  return PATH_COLORS[app.paths.length % PATH_COLORS.length];
+  for (const c of palette) if (!used.has(c)) return c;
+  return palette[app.paths.length % palette.length];
 }
 
 export function addNewPath() {
@@ -38,7 +41,7 @@ export function refreshPathPanels() {
 
     html += `<div class="path-panel ${isActive ? 'active' : ''}" data-path-id="${path.id}">`;
     html += `<div class="path-panel-header">`;
-    html += `<input type="color" class="path-color-swatch" value="${path.color}" data-path-id="${path.id}" title="Path color">`;
+    html += `<input type="color" class="path-color-swatch" value="${colorForTypeColorInput(path.color)}" data-path-id="${path.id}" title="Path color">`;
     html += `<span class="path-name">Path ${pathIdx + 1}</span>`;
     html += `<span class="path-point-count">${path.points.length} pts</span>`;
     html += `<input type="number" class="path-width-input" value="${path.width}" min="1" max="8" step="0.5" data-path-id="${path.id}" title="Stroke width (px)">`;
@@ -354,39 +357,39 @@ export function showSelProps(o) {
     h += `<div class="prop-row"><span class="prop-label">X</span><input type="number" value="${o.x.toFixed(2)}" data-prop="x" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Y</span><input type="number" value="${o.y.toFixed(2)}" data-prop="y" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Size</span><input type="number" value="${o.fontSize || 13}" data-prop="fontSize" min="8" max="36" step="1" style="width:55px"><span style="font-size:10px;color:var(--text-dim)">px</span></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Text</span><input type="color" class="color-swatch" value="${o.textColor || cssVar('--callout-text')}" data-prop="textColor"></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Bg</span><input type="color" class="color-swatch" value="${o.bgColor || cssVar('--bg-surface')}" data-prop="bgColor"></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Border</span><input type="color" class="color-swatch" value="${o.borderColor || cssVar('--callout-border')}" data-prop="borderColor"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Text</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.textColor || cssVar('--callout-text'))}" data-prop="textColor"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Bg</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.bgColor || cssVar('--bg-surface'))}" data-prop="bgColor"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Border</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.borderColor || cssVar('--callout-border'))}" data-prop="borderColor"></div>`;
   } else if (o.type === 'hline') {
     h = `<div class="prop-row"><span class="prop-label">Value</span><input type="number" value="${o.value.toFixed(2)}" data-prop="value" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Name</span><input type="text" value="${o.label || ''}" data-prop="label" placeholder="e.g. Dwell"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Label X</span><input type="range" min="0" max="1" step="any" value="${o.labelPos !== undefined ? o.labelPos : 1.0}" data-prop="labelPos" style="flex:1;accent-color:${o.color || 'var(--accent-orange)'}"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Side</span><select data-prop="labelSide"><option value="above" ${(o.labelSide || 'above') === 'above' ? 'selected' : ''}>Above</option><option value="below" ${o.labelSide === 'below' ? 'selected' : ''}>Below</option></select></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${o.color || cssVar('--ref-hline')}" data-prop="color"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.color || cssVar('--ref-hline'))}" data-prop="color"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Intersect</span><select data-prop="intersectPathId" style="flex:1;min-width:0"><option value="" ${o.intersectPathId == null ? 'selected' : ''}>All paths</option>`;
     app.paths.forEach((path, i) => {
       h += `<option value="${path.id}" ${o.intersectPathId === path.id ? 'selected' : ''}>Path ${i + 1}</option>`;
     });
     h += `</select></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Hit color</span><input type="color" class="color-swatch" data-prop="intersectColor" value="${o.intersectColor || cssVar('--intersect-default')}"><button type="button" class="prop-reset-hit" style="font-size:10px;margin-left:6px">Default</button></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Hit color</span><input type="color" class="color-swatch" data-prop="intersectColor" value="${colorForTypeColorInput(o.intersectColor || cssVar('--intersect-default'))}"><button type="button" class="prop-reset-hit" style="font-size:10px;margin-left:6px">Default</button></div>`;
   } else if (o.type === 'vline') {
     h = `<div class="prop-row"><span class="prop-label">Value</span><input type="number" value="${o.value.toFixed(2)}" data-prop="value" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Name</span><input type="text" value="${o.label || ''}" data-prop="label" placeholder="e.g. Start"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Label Y</span><input type="range" min="0" max="1" step="any" value="${o.labelPos !== undefined ? o.labelPos : 0.0}" data-prop="labelPos" style="flex:1;accent-color:${o.color || 'var(--accent-purple)'}"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Side</span><select data-prop="labelSide"><option value="right" ${(o.labelSide || 'right') === 'right' ? 'selected' : ''}>Right</option><option value="left" ${o.labelSide === 'left' ? 'selected' : ''}>Left</option></select></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${o.color || cssVar('--ref-vline')}" data-prop="color"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.color || cssVar('--ref-vline'))}" data-prop="color"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Intersect</span><select data-prop="intersectPathId" style="flex:1;min-width:0"><option value="" ${o.intersectPathId == null ? 'selected' : ''}>All paths</option>`;
     app.paths.forEach((path, i) => {
       h += `<option value="${path.id}" ${o.intersectPathId === path.id ? 'selected' : ''}>Path ${i + 1}</option>`;
     });
     h += `</select></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Hit color</span><input type="color" class="color-swatch" data-prop="intersectColor" value="${o.intersectColor || cssVar('--intersect-default')}"><button type="button" class="prop-reset-hit" style="font-size:10px;margin-left:6px">Default</button></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Hit color</span><input type="color" class="color-swatch" data-prop="intersectColor" value="${colorForTypeColorInput(o.intersectColor || cssVar('--intersect-default'))}"><button type="button" class="prop-reset-hit" style="font-size:10px;margin-left:6px">Default</button></div>`;
   } else if (o.type === 'line' || o.type === 'dimension') {
     h = `<div class="prop-row"><span class="prop-label">X1</span><input type="number" value="${o.x1.toFixed(2)}" data-prop="x1" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Y1</span><input type="number" value="${o.y1.toFixed(2)}" data-prop="y1" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">X2</span><input type="number" value="${o.x2.toFixed(2)}" data-prop="x2" step="1"></div>`;
     h += `<div class="prop-row"><span class="prop-label">Y2</span><input type="number" value="${o.y2.toFixed(2)}" data-prop="y2" step="1"></div>`;
-    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${o.color || cssVar('--accent-red')}" data-prop="color"></div>`;
+    h += `<div class="prop-row"><span class="prop-label">Color</span><input type="color" class="color-swatch" value="${colorForTypeColorInput(o.color || cssVar('--accent-red'))}" data-prop="color"></div>`;
   }
   c.innerHTML = h;
   c.querySelectorAll('input,select').forEach(inp => {

@@ -5,6 +5,34 @@ export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/** `<input type="color">` only accepts #rrggbb; cssVar() often returns rgb()/rgba(). */
+export function colorForTypeColorInput(cssColor) {
+  if (!cssColor || typeof cssColor !== 'string') return '#808080';
+  const v = cssColor.trim();
+  if (!v) return '#808080';
+  if (v.startsWith('#')) {
+    if (v.length === 4) {
+      return (
+        '#' +
+        v[1] +
+        v[1] +
+        v[2] +
+        v[2] +
+        v[3] +
+        v[3]
+      ).toLowerCase();
+    }
+    if (v.length >= 7) return v.slice(0, 7).toLowerCase();
+    return '#808080';
+  }
+  const m = v.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) {
+    const hex = (n) => Math.min(255, Math.max(0, parseInt(n, 10))).toString(16).padStart(2, '0');
+    return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
+  }
+  return '#808080';
+}
+
 export function g2c(gx, gy) {
   const pw = app.W / app.dpr - MARGIN.left - MARGIN.right;
   const ph = app.H / app.dpr - MARGIN.top - MARGIN.bottom;
