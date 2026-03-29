@@ -130,6 +130,82 @@ function buildIntersectionReport(intData) {
   return { intersections: lines, measures, hasData: true };
 }
 
+export function buildStatsExportModel() {
+  const paths = [];
+  app.paths.forEach((path, idx) => {
+    const a = computePathAnalytics(path);
+    if (!a) return;
+    paths.push({
+      index: idx + 1,
+      color: path.color,
+      pointCount: a.pointCount,
+      xMin: a.xMin, xMax: a.xMax, xRange: a.xRange,
+      yMin: a.yMin, yMax: a.yMax, yRange: a.yRange,
+      stroke: a.stroke,
+      maxVelocity: a.maxVelocity,
+      maxAcceleration: a.maxAcceleration
+    });
+  });
+
+  const intersections = [];
+  const segments = [];
+
+  if (app.showIntersects) {
+    const intData = collectIntersectionData();
+    const { allInts, pathSamples } = intData;
+
+    allInts.forEach(p => {
+      const pathIdx = app.paths.findIndex(pa => pa.id === p.pathId) + 1;
+      intersections.push({
+        pathIndex: pathIdx,
+        pathColor: p.pathColor,
+        axis: p.axis,
+        x: p.x,
+        y: p.y,
+        slope: Math.abs(p.slope) > 1e6 ? Infinity : p.slope
+      });
+    });
+
+    const byPath = {};
+    allInts.forEach(int => {
+      if (!byPath[int.pathId]) byPath[int.pathId] = { ints: [], color: int.pathColor };
+      byPath[int.pathId].ints.push(int);
+    });
+
+    for (const [pathId, data] of Object.entries(byPath)) {
+      if (data.ints.length < 2) continue;
+      const samples = pathSamples.get(parseInt(pathId));
+      const sortedInts = [...data.ints].sort((a, b) => a.x - b.x);
+      const pathIdx = app.paths.findIndex(p => p.id === parseInt(pathId)) + 1;
+      for (let k = 0; k < sortedInts.length - 1; k++) {
+        const ia = sortedInts[k], ib = sortedInts[k + 1];
+        let arcLen = 0;
+        if (samples) {
+          for (let j = 0; j < samples.length - 1; j++) {
+            const sx = samples[j].x, snx = samples[j + 1].x;
+            if (sx >= ia.x && snx <= ib.x) {
+              const ddx = samples[j + 1].x - samples[j].x;
+              const ddy = samples[j + 1].y - samples[j].y;
+              arcLen += Math.sqrt(ddx * ddx + ddy * ddy);
+            }
+          }
+        }
+        const dxS = ib.x - ia.x, dyS = ib.y - ia.y;
+        segments.push({
+          pathIndex: pathIdx,
+          pathColor: data.color,
+          from: k + 1,
+          to: k + 2,
+          arcLength: arcLen,
+          straightLength: Math.sqrt(dxS * dxS + dyS * dyS)
+        });
+      }
+    }
+  }
+
+  return { paths, intersections, segments };
+}
+
 export function buildStatsText() {
   const lines = [];
 

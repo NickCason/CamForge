@@ -13,7 +13,8 @@ import {
   effectiveCalloutMode
 } from '../intersectLabels.js';
 import { intersectMarkerSvg } from '../intersectMarkers.js';
-import { repeatOffsets, buildStatsText } from '../export/sceneData.js';
+import { repeatOffsets, buildStatsExportModel } from '../export/sceneData.js';
+import { getStatsReportHeight, buildStatsReportSvg } from '../export/statsReportSvg.js';
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -36,11 +37,11 @@ export function buildSvgString({ transparent = false, includeStats = false, scal
   const minor = cssVar('--grid-minor'), major = cssVar('--grid-major');
   const cycleX = xR, cycleY = yR;
 
+  let statsModel = null;
   let statsHeight = 0;
-  let statsLines = [];
   if (includeStats) {
-    statsLines = buildStatsText();
-    statsHeight = statsLines.length * 16 + 24;
+    statsModel = buildStatsExportModel();
+    statsHeight = getStatsReportHeight(statsModel);
   }
 
   const totalH = sh + statsHeight;
@@ -52,7 +53,7 @@ export function buildSvgString({ transparent = false, includeStats = false, scal
   svg += `<defs><style>text{font-family:'JetBrains Mono',monospace}</style></defs>`;
 
   if (!transparent) {
-    svg += `<rect width="100%" height="100%" fill="${bgExport}"/>`;
+    svg += `<rect width="${sw}" height="${totalH}" fill="${bgExport}"/>`;
   }
 
   svg += `<g transform="translate(${tx.toFixed(3)},${ty.toFixed(3)}) scale(${zoom})">`;
@@ -270,15 +271,8 @@ export function buildSvgString({ transparent = false, includeStats = false, scal
 
   svg += `</g>`;
 
-  // --- Stats block (below the graph) ---
-  if (includeStats && statsLines.length > 0) {
-    const statsY = sh + 10;
-    const statsFill = cssVar('--text-dim');
-    statsLines.forEach((line, i) => {
-      const isHeader = line.startsWith('\u2500');
-      const fill = isHeader ? cssVar('--text-secondary') : statsFill;
-      svg += `<text x="12" y="${(statsY + i * 16 + 14).toFixed(1)}" fill="${fill}" font-size="11">${esc(line)}</text>`;
-    });
+  if (includeStats && statsModel) {
+    svg += buildStatsReportSvg(statsModel, { x: 0, y: sh, width: sw });
   }
 
   svg += '</svg>';

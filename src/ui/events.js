@@ -485,7 +485,6 @@ export function initEvents() {
   document.getElementById('exportFormat').addEventListener('change', e => {
     const isPdf = e.target.value === 'pdf';
     document.getElementById('exportTransparentRow').style.display = isPdf ? 'none' : '';
-    document.getElementById('exportPdfModeRow').style.display = isPdf ? '' : 'none';
   });
   document.getElementById('btnConfirmExport').addEventListener('click', () => {
     const fmt = document.getElementById('exportFormat').value;
@@ -498,8 +497,7 @@ export function initEvents() {
     } else if (fmt === 'png') {
       exportPng({ transparent, includeStats, scale });
     } else if (fmt === 'pdf') {
-      const vector = document.getElementById('exportPdfMode').value === 'vector';
-      exportPdf({ includeStats, scale, vector });
+      exportPdf({ includeStats, scale });
     }
   });
   document.getElementById('btnAddPath').addEventListener('click', addNewPath);
