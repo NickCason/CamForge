@@ -5,24 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cam Profile Designer</title>
 <script>
+/* Theme resolution: keep in sync with getSystemColorSchemeMode / readStoredThemeMode in src/themes/applyTheme.js */
 (function () {
   var IDS = ['forge', 'oxide', 'blueprint', 'dro', 'telemetry', 'monolith', 'theme-axiom', 'theme-strata', 'theme-flux', 'theme-catalyst', 'theme-zenith'];
   var P = 'camforge-palette';
   var T = 'camforge-theme';
+  function systemTheme() {
+    try {
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } catch (e) {
+      return 'dark';
+    }
+  }
   try {
     var pal = localStorage.getItem(P) || 'forge';
-    var th = localStorage.getItem(T) || 'dark';
+    var th = localStorage.getItem(T);
+    if (th !== 'light' && th !== 'dark') th = systemTheme();
     if (IDS.indexOf(pal) < 0) pal = 'forge';
-    if (th !== 'light') th = 'dark';
     document.documentElement.setAttribute('data-palette', pal);
     document.documentElement.setAttribute('data-theme', th);
   } catch (e) {
     document.documentElement.setAttribute('data-palette', 'forge');
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', systemTheme());
   }
 })();
 </script>
-  <script type="module" crossorigin src="/CamForge/assets/index-CbwywRWn.js"></script>
+  <script type="module" crossorigin src="/CamForge/assets/index-Dt8ITYa6.js"></script>
   <link rel="stylesheet" crossorigin href="/CamForge/assets/index-CgQimcys.css">
 </head>
 <body>
