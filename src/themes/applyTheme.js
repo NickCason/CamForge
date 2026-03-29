@@ -8,6 +8,17 @@ import {
   STORAGE_THEME,
 } from './tokens.js';
 
+/** Host OS light/dark; dark if query missing or fails. Keep in sync with index.html head script. */
+export function getSystemColorSchemeMode() {
+  try {
+    return window.matchMedia('(prefers-color-scheme: light)').matches
+      ? 'light'
+      : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 export function readStoredPalette() {
   try {
     const v = localStorage.getItem(STORAGE_PALETTE);
@@ -20,9 +31,9 @@ export function readStoredPalette() {
 export function readStoredThemeMode() {
   try {
     const v = localStorage.getItem(STORAGE_THEME);
-    return isValidTheme(v) ? v : DEFAULT_THEME;
+    return isValidTheme(v) ? v : getSystemColorSchemeMode();
   } catch {
-    return DEFAULT_THEME;
+    return getSystemColorSchemeMode();
   }
 }
 
