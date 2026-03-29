@@ -84,6 +84,9 @@
               top 0.35s cubic-bezier(0.4,0,0.2,1),
               left 0.35s cubic-bezier(0.4,0,0.2,1);
   font-family: 'IBM Plex Sans', sans-serif;
+  pointer-events: none;
+}
+.tutorial-overlay.active .tutorial-card {
   pointer-events: auto;
 }
 .tutorial-card.visible {

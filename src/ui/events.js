@@ -167,8 +167,38 @@ function ctxAction(a) {
 export function initEvents() {
   const canvas = app.canvas;
 
-  canvas.addEventListener('mousemove', e => {
-    const r = canvas.getBoundingClientRect(); app.mouseCanvasX = e.clientX - r.left; app.mouseCanvasY = e.clientY - r.top;
+  function finishCanvasInteraction() {
+    if (app.isPanning) {
+      app.isPanning = false;
+      canvas.style.cursor = app.activeTool === 'select' ? 'default' : 'crosshair';
+      return;
+    }
+    if (app.draggingPointInfo) {
+      app.draggingPointInfo = null;
+      app.lastSnapKind = 'none';
+      canvas.style.cursor = app.activeTool === 'select' ? 'grab' : 'crosshair';
+      return;
+    }
+    if (app.draggingIntersectLabel) {
+      app.draggingIntersectLabel = null;
+      canvas.style.cursor = app.activeTool === 'select' ? 'grab' : 'crosshair';
+      return;
+    }
+    if (app.draggingObject) {
+      app.draggingObject = null;
+      app.draggingCalloutPart = null;
+      canvas.style.cursor = app.activeTool === 'select' ? 'grab' : 'crosshair';
+    }
+  }
+
+  function onCanvasPointerMove(e) {
+    const r = canvas.getBoundingClientRect();
+    const onCanvas = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    const dragging = app.isPanning || app.draggingPointInfo || app.draggingObject || app.draggingIntersectLabel;
+    if (!onCanvas && !dragging) return;
+
+    app.mouseCanvasX = e.clientX - r.left;
+    app.mouseCanvasY = e.clientY - r.top;
     const gp = c2g(app.mouseCanvasX, app.mouseCanvasY);
     document.getElementById('cursorReadout').innerHTML = `X: <span>${gp.x.toFixed(3)}</span> &nbsp; Y: <span>${gp.y.toFixed(3)}</span>`;
     if (app.isPanning) {
@@ -231,6 +261,8 @@ export function initEvents() {
         canvas.style.cursor = hp || hi || hm || ho || panHover ? 'grab' : 'default';
       } else if (panHover) {
         canvas.style.cursor = 'grab';
+      } else {
+        canvas.style.cursor = 'crosshair';
       }
     }
     if (app.lineStart && (app.activeTool === 'line' || app.activeTool === 'dimension')) {
@@ -240,7 +272,11 @@ export function initEvents() {
     } else if (!app.draggingPointInfo && !app.draggingObject) {
       app.lastSnapKind = 'none';
     }
-  });
+  }
+
+  window.addEventListener('pointermove', onCanvasPointerMove);
+  window.addEventListener('pointerup', finishCanvasInteraction);
+  window.addEventListener('pointercancel', finishCanvasInteraction);
 
   canvas.addEventListener('mousedown', e => {
     if (e.button === 1) {
@@ -249,6 +285,11 @@ export function initEvents() {
       canvas.style.cursor = 'grabbing';
       e.preventDefault();
       return;
+    }
+    {
+      const cr = canvas.getBoundingClientRect();
+      app.mouseCanvasX = e.clientX - cr.left;
+      app.mouseCanvasY = e.clientY - cr.top;
     }
     if (e.button === 0 && app.spaceDown) {
       app.isPanning = true;
@@ -341,14 +382,15 @@ export function initEvents() {
     if (app.activeTool === 'line' || app.activeTool === 'dimension') { const s = pointerSnap(gp.x, gp.y, e.shiftKey); if (!app.lineStart) { app.lineStart = s; } else { saveState(); app.objects.push({ type: app.activeTool === 'line' ? 'line' : 'dimension', id: app.nextId++, x1: app.lineStart.x, y1: app.lineStart.y, x2: s.x, y2: s.y, color: app.activeTool === 'line' ? cssVar('--accent-red') : cssVar('--accent-orange'), dashed: false, label: '' }); app.lineStart = null; refreshObjectList(); draw(); } }
     if (app.activeTool === 'hline') { saveState(); const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'hline', id: app.nextId++, value: s.y, color: '', label: '' }); refreshObjectList(); draw(); }
     if (app.activeTool === 'vline') { saveState(); const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.objects.push({ type: 'vline', id: app.nextId++, value: s.x, color: '', label: '' }); refreshObjectList(); draw(); }
-    if (app.activeTool === 'callout') { const s = pointerSnap(gp.x, gp.y, e.shiftKey); app.calloutPos = s; document.getElementById('calloutOverlay').classList.add('show'); document.getElementById('calloutText').value = ''; document.getElementById('calloutText').focus(); }
-  });
-
-  canvas.addEventListener('mouseup', () => {
-    if (app.isPanning) { app.isPanning = false; canvas.style.cursor = app.activeTool === 'select' ? 'default' : 'crosshair'; return; }
-    if (app.draggingPointInfo) { app.draggingPointInfo = null; app.lastSnapKind = 'none'; canvas.style.cursor = 'grab'; }
-    if (app.draggingIntersectLabel) { app.draggingIntersectLabel = null; canvas.style.cursor = 'grab'; }
-    if (app.draggingObject) { app.draggingObject = null; app.draggingCalloutPart = null; canvas.style.cursor = 'grab'; }
+    if (app.activeTool === 'callout') {
+      const s = pointerSnap(gp.x, gp.y, e.shiftKey);
+      app.calloutPos = s;
+      const overlay = document.getElementById('calloutOverlay');
+      const inp = document.getElementById('calloutText');
+      overlay.classList.add('show');
+      inp.value = '';
+      inp.focus();
+    }
   });
 
   canvas.addEventListener('dblclick', () => {

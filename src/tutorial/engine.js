@@ -309,12 +309,13 @@ function close() {
   if (!running) return;
   running = false;
   card.classList.remove('visible');
+  overlay.classList.remove('active');
   overlay.classList.add('fade-out');
   pulse.style.display = 'none';
   backdrop.classList.remove('has-target', 'no-target');
 
   setTimeout(() => {
-    overlay.classList.remove('active', 'fade-out');
+    overlay.classList.remove('fade-out');
   }, 300);
 
   document.removeEventListener('keydown', onKeyDown, true);

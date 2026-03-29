@@ -44,6 +44,18 @@ When **Repeat profile** + **Infinite grid** are on, the renderer draws path copi
 - **`S`** — Toggle all snap types off / restore previous.
 - **`Shift`** (during drag) — Same as `opts.shiftKey`: suspend snap (`keydown`/`keyup` set `app.shiftDown`; mouse handlers use `e.shiftKey`).
 
+### Pointer routing (feeds into snap)
+
+Snapping runs on **graph coordinates** from `c2g(app.mouseCanvasX, app.mouseCanvasY)` (then `pointerSnap` / `resolveSnap`). Those canvas coords must match the **actual click**, not a stale position from an earlier `pointermove`.
+
+- **`mousedown` on the canvas** (`events.js`): after handling middle-button pan, **`mouseCanvasX` / `mouseCanvasY` are set from `e.clientX` / `e.clientY` and the canvas `getBoundingClientRect()`** before `c2g` and any `pointerSnap` used for placement (points, lines, callouts, etc.). Without this, a click after moving over UI or odd event ordering can snap/placement at the wrong graph location.
+- **Move / drag**: `pointermove` is handled on **`window`** so pan and drags keep updating when the cursor leaves the canvas; **`pointerup` / `pointercancel`** on `window` end those interactions (releases outside the canvas still clear drag state).
+- **Placement-tool cursor**: For tools that use a crosshair, the move handler sets **`cursor: crosshair`** whenever not in select mode and not in the Alt+empty-canvas pan-hover case, so the cursor does not stay `default` or `grab` from a previous tool or drag.
+
+### Tutorial overlay vs the canvas
+
+The tutorial coach card used to set **`pointer-events: auto`** while the root overlay was **`pointer-events: none`** after close. In that situation the **card can still receive hits** (children can be targets even when the parent ignores events), which blocked canvas **`mousedown`** in the card’s rectangle—so nothing reached the snap/placement path. **`tutorial.css`** now keeps the card **`pointer-events: none`** by default and only enables **`pointer-events: auto`** under **`.tutorial-overlay.active .tutorial-card`**. **`engine.js`** removes **`.active`** as soon as the tutorial closes (not after the fade timeout) so the full-screen layer does not stay a hit target while invisible.
+
 ## Special cases
 
 - **Dragging path nodes**: `pointerSnap(..., { gridOnly: true })` — grid only.
@@ -54,6 +66,7 @@ When **Repeat profile** + **Infinite grid** are on, the renderer draws path copi
 ## Files to touch for behavior changes
 
 1. `src/snapEngine.js` — thresholds, candidate logic, Hermite tuning, repeat behavior.
-2. `src/ui/events.js` — where `pointerSnap` / `resolveSnap` are invoked; pass `gridOnly` or exclusions.
+2. `src/ui/events.js` — where `pointerSnap` / `resolveSnap` are invoked; pass `gridOnly` or exclusions; pointer sync on `mousedown` and window-level `pointermove` / `pointerup` for drags.
 3. `src/state.js` — default toggles.
 4. `index.html` — snap popover markup if adding a new mode.
+5. `src/tutorial/tutorial.css` + `src/tutorial/engine.js` — tutorial stacking / pointer-events (avoid invisible hit targets over the graph).
