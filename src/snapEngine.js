@@ -1,25 +1,84 @@
 import { app } from './state.js';
 import { g2c } from './coords.js';
-import { sampleSpline } from './spline.js';
+import { sortedPoints } from './spline.js';
+import { repeatOffsets } from './export/sceneData.js';
 
 const SNAP_THRESHOLD_PX = 12;
-const SNAP_SAMPLES_PER_SEG = 60;
+/** Coarse t samples for closest-point on cubic; refined by ternary search. */
+const HERMITE_T_SAMPLES = 40;
+const HERMITE_REFINE_ITERS = 22;
 
-const _cache = new Map();
-
-function cacheKey(path) {
-  return path.id + ':' + path.points.length + ':' +
-    path.points.map(p => p.x + ',' + p.y + ',' + (p.segType || 'cubic')).join(';') +
-    ':' + path.startSlope + ':' + path.endSlope;
+/**
+ * Hermite segment graph position; matches `sampleSpline` cubic branch.
+ * @param {number} xOff  added to x (repeat profile)
+ */
+function hermiteGraphXY(p1, p2, entrySlope, exitSlope, t, xOff) {
+  const dx = p2.x - p1.x;
+  const m1x = dx, m1y = entrySlope * dx;
+  const m2x = dx, m2y = exitSlope * dx;
+  const t2 = t * t, t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+  return {
+    x: h00 * p1.x + h10 * m1x + h01 * p2.x + h11 * m2x + xOff,
+    y: h00 * p1.y + h10 * m1y + h01 * p2.y + h11 * m2y
+  };
 }
 
-function getCachedSamples(path) {
-  const key = cacheKey(path);
-  let entry = _cache.get(path.id);
-  if (entry && entry.key === key) return entry.samples;
-  const samples = sampleSpline(path, SNAP_SAMPLES_PER_SEG);
-  _cache.set(path.id, { key, samples });
-  return samples;
+function segmentSlopes(path, pts, i) {
+  const n = pts.length;
+  function getLinearSlope(j) {
+    const ddx = pts[j + 1].x - pts[j].x;
+    return ddx === 0 ? 0 : (pts[j + 1].y - pts[j].y) / ddx;
+  }
+  function naturalSlope(j) {
+    if (j <= 0) return path.startSlope;
+    if (j >= n - 1) return path.endSlope;
+    const prev = pts[j - 1], next = pts[j + 1];
+    if (prev.x === next.x) return 0;
+    return (next.y - prev.y) / (next.x - prev.x);
+  }
+  const p2 = pts[i + 1];
+  let entrySlope;
+  if (i === 0) entrySlope = path.startSlope;
+  else {
+    const prevType = pts[i - 1].segType || 'cubic';
+    entrySlope = (prevType === 'linear') ? getLinearSlope(i - 1) : naturalSlope(i);
+  }
+  let exitSlope;
+  if (i === n - 2) exitSlope = path.endSlope;
+  else {
+    const nextType = p2.segType || 'cubic';
+    exitSlope = (nextType === 'linear') ? getLinearSlope(i + 1) : naturalSlope(i + 1);
+  }
+  return { entrySlope, exitSlope };
+}
+
+/** Closest point on true cubic Hermite segment, distance in screen px (pan cancels). */
+function nearestOnCubicHermiteScreen(gpx, gpy, p1, p2, entrySlope, exitSlope, xOff) {
+  const p = toScreen(gpx, gpy);
+  function distSq(t) {
+    const g = hermiteGraphXY(p1, p2, entrySlope, exitSlope, t, xOff);
+    const s = toScreen(g.x, g.y);
+    const ddx = s.x - p.x, ddy = s.y - p.y;
+    return ddx * ddx + ddy * ddy;
+  }
+  let bestT = 0, bestD = distSq(0);
+  for (let k = 1; k <= HERMITE_T_SAMPLES; k++) {
+    const t = k / HERMITE_T_SAMPLES;
+    const d = distSq(t);
+    if (d < bestD) { bestD = d; bestT = t; }
+  }
+  let lo = Math.max(0, bestT - 1 / HERMITE_T_SAMPLES);
+  let hi = Math.min(1, bestT + 1 / HERMITE_T_SAMPLES);
+  for (let it = 0; it < HERMITE_REFINE_ITERS; it++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (distSq(m1) < distSq(m2)) hi = m2; else lo = m1;
+  }
+  bestT = (lo + hi) / 2;
+  bestD = distSq(bestT);
+  const g = hermiteGraphXY(p1, p2, entrySlope, exitSlope, bestT, xOff);
+  return { gx: g.x, gy: g.y, dist: Math.sqrt(bestD) };
 }
 
 function toScreen(gx, gy) {
@@ -55,7 +114,7 @@ function gridCandidate(gx, gy) {
 /**
  * @param {number} gx
  * @param {number} gy
- * @param {{ shiftKey?: boolean, excludePathId?: number, excludePointIndex?: number }} opts
+ * @param {{ shiftKey?: boolean, excludePathId?: number, excludePointIndex?: number, gridOnly?: boolean }} opts
  * @returns {{ x: number, y: number, kind: 'none'|'grid'|'node'|'curve' }}
  */
 export function resolveSnap(gx, gy, opts = {}) {
@@ -63,14 +122,23 @@ export function resolveSnap(gx, gy, opts = {}) {
   if (opts.shiftKey) return noSnap;
 
   const { snapToGrid, snapToPathNodes, snapToPathCurve, snapActivePathOnly } = app;
-  if (!snapToGrid && !snapToPathNodes && !snapToPathCurve) return noSnap;
+  const gridOnly = !!opts.gridOnly;
+  const usePathNodes = snapToPathNodes && !gridOnly;
+  const usePathCurve = snapToPathCurve && !gridOnly;
+  if (gridOnly) {
+    if (!snapToGrid) return noSnap;
+  } else if (!snapToGrid && !snapToPathNodes && !snapToPathCurve) {
+    return noSnap;
+  }
 
   let best = null;
   let bestDist = SNAP_THRESHOLD_PX;
 
-  const candidatePaths = snapActivePathOnly
-    ? app.paths.filter(p => p.id === app.activePathId)
-    : app.paths;
+  const candidatePaths = (usePathNodes || usePathCurve)
+    ? (snapActivePathOnly ? app.paths.filter(p => p.id === app.activePathId) : app.paths)
+    : [];
+
+  const xOffsets = (usePathNodes || usePathCurve) ? repeatOffsets() : [0];
 
   if (snapToGrid) {
     const gc = gridCandidate(gx, gy);
@@ -78,32 +146,40 @@ export function resolveSnap(gx, gy, opts = {}) {
     if (d < bestDist) { best = { x: gc.x, y: gc.y, kind: 'grid' }; bestDist = d; }
   }
 
-  if (snapToPathNodes) {
+  if (usePathNodes) {
     for (const path of candidatePaths) {
       for (let i = 0; i < path.points.length; i++) {
         if (opts.excludePathId === path.id && opts.excludePointIndex === i) continue;
         const pt = path.points[i];
-        const d = screenDist(gx, gy, pt.x, pt.y);
-        if (d < bestDist) { best = { x: pt.x, y: pt.y, kind: 'node' }; bestDist = d; }
+        for (const off of xOffsets) {
+          const px = pt.x + off;
+          const d = screenDist(gx, gy, px, pt.y);
+          if (d < bestDist) { best = { x: px, y: pt.y, kind: 'node' }; bestDist = d; }
+        }
       }
     }
   }
 
-  if (snapToPathCurve) {
+  if (usePathCurve) {
     for (const path of candidatePaths) {
       if (path.points.length < 2) continue;
-      const samples = getCachedSamples(path);
-      for (let i = 0; i < samples.length - 1; i++) {
-        const hit = nearestOnSegmentScreen(gx, gy, samples[i].x, samples[i].y, samples[i + 1].x, samples[i + 1].y);
-        if (hit.dist < bestDist) { best = { x: hit.gx, y: hit.gy, kind: 'curve' }; bestDist = hit.dist; }
+      const pts = sortedPoints(path.points);
+      for (let si = 0; si < pts.length - 1; si++) {
+        const p1 = pts[si], p2 = pts[si + 1];
+        const segType = p1.segType || 'cubic';
+        for (const off of xOffsets) {
+          let hit;
+          if (segType === 'linear') {
+            hit = nearestOnSegmentScreen(gx, gy, p1.x + off, p1.y, p2.x + off, p2.y);
+          } else {
+            const { entrySlope, exitSlope } = segmentSlopes(path, pts, si);
+            hit = nearestOnCubicHermiteScreen(gx, gy, p1, p2, entrySlope, exitSlope, off);
+          }
+          if (hit.dist < bestDist) { best = { x: hit.gx, y: hit.gy, kind: 'curve' }; bestDist = hit.dist; }
+        }
       }
     }
   }
 
   return best || noSnap;
-}
-
-export function invalidateSnapCache(pathId) {
-  if (pathId !== undefined) _cache.delete(pathId);
-  else _cache.clear();
 }

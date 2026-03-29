@@ -82,8 +82,8 @@ function toggleSnapMaster() {
   syncSnapUI();
 }
 
-function pointerSnap(gx, gy, shiftKey, excludePathId, excludePointIndex) {
-  return resolveSnap(gx, gy, { shiftKey, excludePathId, excludePointIndex });
+function pointerSnap(gx, gy, shiftKey, excludePathId, excludePointIndex, snapOpts) {
+  return resolveSnap(gx, gy, { shiftKey, excludePathId, excludePointIndex, ...(snapOpts || {}) });
 }
 
 function toggleTheme() {
@@ -188,7 +188,7 @@ export function initEvents() {
       const path = getPath(app.draggingPointInfo.pathId);
       if (path) {
         const g = c2g(app.mouseCanvasX, app.mouseCanvasY);
-        const s = pointerSnap(g.x, g.y, e.shiftKey, app.draggingPointInfo.pathId, app.draggingPointInfo.pointIndex);
+        const s = pointerSnap(g.x, g.y, e.shiftKey, undefined, undefined, { gridOnly: true });
         path.points[app.draggingPointInfo.pointIndex].x = s.x;
         path.points[app.draggingPointInfo.pointIndex].y = s.y;
         app.lastSnapKind = s.kind; app.lastSnapX = s.x; app.lastSnapY = s.y;
