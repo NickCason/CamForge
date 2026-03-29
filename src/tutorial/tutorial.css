@@ -1,0 +1,292 @@
+/* ── Tutorial Overlay ── */
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.tutorial-overlay.active { pointer-events: auto; }
+.tutorial-overlay.fade-out { opacity: 0; }
+
+.tutorial-backdrop {
+  position: absolute;
+  border-radius: 6px;
+  pointer-events: none;
+  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-radius 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tutorial-backdrop.has-target {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+.tutorial-backdrop.no-target {
+  inset: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Pulse Ring ── */
+.tutorial-pulse {
+  position: absolute;
+  border-radius: 8px;
+  pointer-events: none;
+  transition: top 0.35s cubic-bezier(0.4,0,0.2,1),
+              left 0.35s cubic-bezier(0.4,0,0.2,1),
+              width 0.35s cubic-bezier(0.4,0,0.2,1),
+              height 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+.tutorial-pulse::before,
+.tutorial-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 2px solid var(--accent-cyan, #22d3ee);
+  animation: tutorialPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.tutorial-pulse::after {
+  animation-delay: 0.6s;
+}
+
+@keyframes tutorialPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+/* ── Coach Card ── */
+.tutorial-card {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-panel, #181b1e);
+  border: 1px solid var(--border-active, #4a5560);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.55));
+  padding: 18px 20px 14px;
+  z-index: 9001;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.28s ease, transform 0.28s ease,
+              top 0.35s cubic-bezier(0.4,0,0.2,1),
+              left 0.35s cubic-bezier(0.4,0,0.2,1);
+  font-family: 'IBM Plex Sans', sans-serif;
+  pointer-events: auto;
+}
+.tutorial-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tutorial-card-arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-panel, #181b1e);
+  border: 1px solid var(--border-active, #4a5560);
+  transform: rotate(45deg);
+  z-index: -1;
+}
+.tutorial-card-arrow.arrow-top {
+  top: -7px;
+  border-bottom: none;
+  border-right: none;
+}
+.tutorial-card-arrow.arrow-bottom {
+  bottom: -7px;
+  border-top: none;
+  border-left: none;
+}
+.tutorial-card-arrow.arrow-left {
+  left: -7px;
+  border-top: none;
+  border-right: none;
+}
+.tutorial-card-arrow.arrow-right {
+  right: -7px;
+  border-bottom: none;
+  border-left: none;
+}
+
+.tutorial-step-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim, #6b7684);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.tutorial-card h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-cyan, #22d3ee);
+  margin: 0 0 10px;
+  letter-spacing: 0.3px;
+}
+
+.tutorial-diagram {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+  padding: 10px 0;
+  background: var(--bg-deep, #111315);
+  border-radius: 6px;
+  border: 1px solid var(--border, #353b42);
+}
+.tutorial-diagram svg {
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+}
+
+.tutorial-desc {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-secondary, #9aa3ad);
+  margin-bottom: 14px;
+}
+
+/* ── Navigation ── */
+.tutorial-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--border, #353b42);
+  padding-top: 12px;
+}
+
+.tutorial-nav button {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tutorial-btn-back {
+  background: var(--bg-surface, #202428);
+  border: 1px solid var(--border, #353b42);
+  color: var(--text-secondary, #9aa3ad);
+}
+.tutorial-btn-back:hover {
+  border-color: var(--border-active, #4a5560);
+  color: var(--text-primary, #e8eaed);
+}
+.tutorial-btn-back:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tutorial-btn-next {
+  background: var(--accent-blue, #38bdf8);
+  border: 1px solid var(--accent-blue, #38bdf8);
+  color: var(--on-accent, #0f172a);
+  font-weight: 600;
+}
+.tutorial-btn-next:hover {
+  filter: brightness(1.12);
+}
+
+.tutorial-btn-skip {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim, #6b7684);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.tutorial-btn-skip:hover {
+  color: var(--text-secondary, #9aa3ad);
+}
+
+/* ── Disable Toggle ── */
+.tutorial-disable-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--text-dim, #6b7684);
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+}
+.tutorial-disable-row input[type="checkbox"] {
+  accent-color: var(--accent-cyan, #22d3ee);
+  margin: 0;
+  cursor: pointer;
+}
+.tutorial-disable-row:hover {
+  color: var(--text-secondary, #9aa3ad);
+}
+
+/* ── Progress Dots ── */
+.tutorial-progress {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: auto;
+}
+.tutorial-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border, #353b42);
+  transition: background 0.2s, transform 0.2s;
+}
+.tutorial-dot.active {
+  background: var(--accent-cyan, #22d3ee);
+  transform: scale(1.3);
+}
+.tutorial-dot.done {
+  background: var(--accent-green, #34d399);
+}
+
+/* ── Centered (no-target) cards ── */
+.tutorial-card.centered {
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%);
+}
+.tutorial-card.centered.visible {
+  transform: translate(-50%, -50%);
+}
+
+/* ── Help button in top-bar ── */
+#btnTutorial {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--accent-cyan, #22d3ee);
+  border-color: var(--accent-cyan, #22d3ee);
+}
+#btnTutorial:hover {
+  background: var(--accent-cyan, #22d3ee);
+  color: var(--on-accent, #0f172a);
+}

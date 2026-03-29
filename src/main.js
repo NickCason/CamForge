@@ -6,6 +6,7 @@ import { refreshAll } from './ui/panels.js';
 import { initEvents } from './ui/events.js';
 import { applyTheme, readStoredPalette, readStoredThemeMode } from './themes/applyTheme.js';
 import { PALETTES } from './themes/tokens.js';
+import { start as startTutorial, tryAutoLaunch } from './tutorial/engine.js';
 
 const paletteSelect = document.getElementById('paletteSelect');
 for (const p of PALETTES) {
@@ -25,3 +26,6 @@ app.paths[0].color = cssVar('--accent-blue');
 initEvents();
 resize();
 refreshAll();
+
+document.getElementById('btnTutorial').addEventListener('click', startTutorial);
+tryAutoLaunch();
